@@ -136,7 +136,7 @@ void dump_eeprom() {
   }
 }
 
-String asHex(int data, uint8_t len) {
+inline String asHex(int data, uint8_t len) {
   String hex = String(data,HEX);
   while(hex.length() < len) {
     hex = "0" + hex;
@@ -206,11 +206,11 @@ void i2c_serial_print(String data) {
   int i=0;
   while(i < n) {
     TinyWireM.beginTransmission(I2C_SERIAL);
-    TinyWireM.send(I2C_SERIAL_PRINT);
+    TinyWireM.write(I2C_SERIAL_PRINT);
     uint8_t len = min(n-i,10);
-    TinyWireM.send(len);
+    TinyWireM.write(len);
     for(int j=len; j>0; j--) {
-      TinyWireM.send(data[i]);
+      TinyWireM.write(data[i]);
       i++;
     }
     TinyWireM.endTransmission();
@@ -220,7 +220,7 @@ void i2c_serial_print(String data) {
 
 uint8_t i2c_serial_available() {
   TinyWireM.beginTransmission(I2C_SERIAL);
-  TinyWireM.send(I2C_SERIAL_AVAILABLE);
+  TinyWireM.write(I2C_SERIAL_AVAILABLE);
   TinyWireM.endTransmission();
   delay(5);
   TinyWireM.requestFrom(I2C_SERIAL,1);
@@ -230,7 +230,7 @@ uint8_t i2c_serial_available() {
 
 uint8_t i2c_serial_read() {
   TinyWireM.beginTransmission(I2C_SERIAL);
-  TinyWireM.send(I2C_SERIAL_READ);
+  TinyWireM.write(I2C_SERIAL_READ);
   TinyWireM.endTransmission();
   delay(5);
   TinyWireM.requestFrom(I2C_SERIAL,1);
