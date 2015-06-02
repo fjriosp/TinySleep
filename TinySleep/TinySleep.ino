@@ -5,12 +5,19 @@
 
 #include <TinyWireM.h>
 
+//5.430 github
+
+
 // I2C_SERIAL
 const uint8_t I2C_SERIAL = 0x08;
 
 const uint8_t I2C_SERIAL_PRINT     = 'p';
 const uint8_t I2C_SERIAL_AVAILABLE = 'a';
 const uint8_t I2C_SERIAL_READ      = 'r';
+
+const uint8_t I2C_SERIAL_BUFSIZE = 10;
+volatile uint8_t i2c_serial_buf[I2C_SERIAL_BUFSIZE];
+volatile uint8_t i2c_serial_buf_used = 0;
 
 // Pins
 const uint8_t PIN_HR    = 1;
@@ -52,6 +59,7 @@ void setup() {
   i2c_serial_println("Commands:");
   i2c_serial_println(" d  Dump EEPROM");
   i2c_serial_println("");
+  i2c_serial_flush();
 }
 
 void loop() {
@@ -65,14 +73,17 @@ void loop() {
         dump_eeprom();
       break;
       default:
-        i2c_serial_println("Unknown command: " + String(cmd));
+        i2c_serial_print("Unknown command: ");
+        i2c_serial_println(cmd);
     }
   }
 
   sleep();
   
   uint8_t hr = hr_measure();
-  i2c_serial_println("HR: " + String(hr));
+  i2c_serial_print("HR: ");
+  i2c_serial_println(hr);
+  i2c_serial_flush();
 }
 
 //##############
@@ -112,7 +123,11 @@ uint8_t hr_measure() {
     while(hr_level);
     
     time = millis()-time;
-    i2c_serial_println("T: " + String(time) + "(" + String(60000/time) + ")");
+    i2c_serial_print("T: ");
+    i2c_serial_print(time);
+    i2c_serial_print(60000/time);
+    i2c_serial_println(")");
+    i2c_serial_flush();
     time = millis();
   }
   
@@ -122,6 +137,7 @@ uint8_t hr_measure() {
 }
 
 void dump_eeprom() {
+  /*
   String line;
   int addr = 0;
   
@@ -134,15 +150,18 @@ void dump_eeprom() {
     }
     i2c_serial_println(line);
   }
+  */
 }
 
-inline String asHex(int data, uint8_t len) {
+void asHex(int data, uint8_t len) {
+  /*
   String hex = String(data,HEX);
   while(hex.length() < len) {
     hex = "0" + hex;
   }
   hex.toUpperCase();
   return hex;
+  */
 }
 
 //#############
@@ -197,25 +216,40 @@ void wdt_interrupt_disable() {
 //# i2c Serial #
 //##############
 
-void i2c_serial_println(String data) {
-  i2c_serial_print(data+"\n");
+inline void i2c_serial_println(uint8_t data) {
+  i2c_serial_print(data);
+  i2c_serial_print('\n');
 }
 
-void i2c_serial_print(String data) {
-  int n=data.length();
-  int i=0;
-  while(i < n) {
-    TinyWireM.beginTransmission(I2C_SERIAL);
-    TinyWireM.write(I2C_SERIAL_PRINT);
-    uint8_t len = min(n-i,10);
-    TinyWireM.write(len);
-    for(int j=len; j>0; j--) {
-      TinyWireM.write(data[i]);
-      i++;
-    }
-    TinyWireM.endTransmission();
-    delay(5);
+inline void i2c_serial_println(const char* data) {
+  i2c_serial_print(data);
+  i2c_serial_print('\n');
+}
+
+void i2c_serial_print(const char* data) {
+  for(int i=0;i<strlen(data);i++)
+    i2c_serial_print(data[i]);
+}
+
+void i2c_serial_print(uint8_t data) {
+  cli();
+  i2c_serial_buf[i2c_serial_buf_used] = data;
+  i2c_serial_buf_used++;
+  if(i2c_serial_buf_used >= I2C_SERIAL_BUFSIZE)
+    i2c_serial_flush();
+  sei();
+}
+
+void i2c_serial_flush() {
+  TinyWireM.beginTransmission(I2C_SERIAL);
+  TinyWireM.write(I2C_SERIAL_PRINT);
+  TinyWireM.write(i2c_serial_buf_used);
+  for(int i=0; i<i2c_serial_buf_used; i++) {
+    TinyWireM.write(i2c_serial_buf[i]);
   }
+  TinyWireM.endTransmission();
+  i2c_serial_buf_used = 0;
+  delay(5);
 }
 
 uint8_t i2c_serial_available() {
