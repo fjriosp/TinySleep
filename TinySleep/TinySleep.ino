@@ -4,20 +4,13 @@
 #include <avr/interrupt.h>
 
 #include <TinyWireM.h>
+#include <TWISerial.h>
 
 //5.430 github
 
 
-// I2C_SERIAL
-const uint8_t I2C_SERIAL = 0x08;
-
-const uint8_t I2C_SERIAL_PRINT     = 'p';
-const uint8_t I2C_SERIAL_AVAILABLE = 'a';
-const uint8_t I2C_SERIAL_READ      = 'r';
-
-const uint8_t I2C_SERIAL_BUFSIZE = 10;
-volatile uint8_t i2c_serial_buf[I2C_SERIAL_BUFSIZE];
-volatile uint8_t i2c_serial_buf_used = 0;
+// TWISerial
+const uint8_t TWI_SERIAL_ADDR = 0x08;
 
 // Pins
 const uint8_t PIN_HR    = 1;
@@ -27,6 +20,8 @@ const uint8_t PIN_HRPWR = 4;
 // Globals
 volatile uint8_t sleeping  = 0;
 volatile uint8_t hr_level  = 0;
+
+TWI_SERIAL TWISerial = TWI_SERIAL(TWI_SERIAL_ADDR);
 
 void setup() {
   wdt_interrupt_enable();
@@ -52,38 +47,38 @@ void setup() {
   // Start I2C
   TinyWireM.begin();
 
-  i2c_serial_println("");
-  i2c_serial_println("");
-  i2c_serial_println("TinySleep 1.0");
-  i2c_serial_println("");
-  i2c_serial_println("Commands:");
-  i2c_serial_println(" d  Dump EEPROM");
-  i2c_serial_println("");
-  i2c_serial_flush();
+  TWISerial.println("");
+  TWISerial.println("");
+  TWISerial.println("TinySleep 1.0");
+  TWISerial.println("");
+  TWISerial.println("Commands:");
+  TWISerial.println(" d Dump EEPROM");
+  TWISerial.println("");
+  TWISerial.flush();
 }
 
 void loop() {
-  uint8_t n = i2c_serial_available();
+  uint8_t n = TWISerial.available();
   
   while(n > 0) {
-    char cmd = i2c_serial_read();
+    char cmd = TWISerial.read();
     n--;
     switch(cmd) {
       case 'd':
         dump_eeprom();
       break;
       default:
-        i2c_serial_print("Unknown command: ");
-        i2c_serial_println(cmd);
+        TWISerial.print("Unknown command: ");
+        TWISerial.println(cmd);
     }
   }
 
   sleep();
   
   uint8_t hr = hr_measure();
-  i2c_serial_print("HR: ");
-  i2c_serial_println(hr);
-  i2c_serial_flush();
+  TWISerial.print("HR: ");
+  TWISerial.println(hr);
+  TWISerial.flush();
 }
 
 //##############
@@ -123,11 +118,11 @@ uint8_t hr_measure() {
     while(hr_level);
     
     time = millis()-time;
-    i2c_serial_print("T: ");
-    i2c_serial_print(time);
-    i2c_serial_print(60000/time);
-    i2c_serial_println(")");
-    i2c_serial_flush();
+    TWISerial.print("T: ");
+    TWISerial.print(time);
+    TWISerial.print(60000/time);
+    TWISerial.println(")");
+    TWISerial.flush();
     time = millis();
   }
   
@@ -137,31 +132,34 @@ uint8_t hr_measure() {
 }
 
 void dump_eeprom() {
-  /*
-  String line;
+  char buf[16];
   int addr = 0;
   
   // 32 lines of 16 bytes = 512 bytes
   for(int j=0; j<32; j++) {
-    line = asHex(addr,4) + ": ";
+    toHex(buf,addr,4);
+    TWISerial.print(buf);
+    TWISerial.print(": ");
     for(int i=0; i<16; i++){
-      line = line + asHex(i,2);
+      toHex(buf,i,2);
+      TWISerial.print(buf);
       addr++;
     }
-    i2c_serial_println(line);
+    TWISerial.println();
   }
-  */
+  TWISerial.flush();
 }
 
-void asHex(int data, uint8_t len) {
-  /*
-  String hex = String(data,HEX);
-  while(hex.length() < len) {
-    hex = "0" + hex;
+void toHex(char* buf, unsigned int n, uint8_t len) {
+  buf[len]='\0';
+  for(int i=len-1; i>=0; i--) {
+    uint8_t v = n & 0x0F;
+    if(v < 10)
+      buf[i] = '0'+v;
+    else
+      buf[i] = 'A'+(v-10);
+    n >>= 4;
   }
-  hex.toUpperCase();
-  return hex;
-  */
 }
 
 //#############
@@ -210,64 +208,4 @@ void wdt_interrupt_disable() {
   WDTCR |= _BV(WDCE) | _BV(WDE); // Enable the WD Change Bit
   WDTCR =  0;                    // Disable WDT
   sei();                         // Enable Interrupts
-}
-
-//##############
-//# i2c Serial #
-//##############
-
-inline void i2c_serial_println(uint8_t data) {
-  i2c_serial_print(data);
-  i2c_serial_print('\n');
-}
-
-inline void i2c_serial_println(const char* data) {
-  i2c_serial_print(data);
-  i2c_serial_print('\n');
-}
-
-void i2c_serial_print(const char* data) {
-  for(int i=0;i<strlen(data);i++)
-    i2c_serial_print(data[i]);
-}
-
-void i2c_serial_print(uint8_t data) {
-  cli();
-  i2c_serial_buf[i2c_serial_buf_used] = data;
-  i2c_serial_buf_used++;
-  if(i2c_serial_buf_used >= I2C_SERIAL_BUFSIZE)
-    i2c_serial_flush();
-  sei();
-}
-
-void i2c_serial_flush() {
-  TinyWireM.beginTransmission(I2C_SERIAL);
-  TinyWireM.write(I2C_SERIAL_PRINT);
-  TinyWireM.write(i2c_serial_buf_used);
-  for(int i=0; i<i2c_serial_buf_used; i++) {
-    TinyWireM.write(i2c_serial_buf[i]);
-  }
-  TinyWireM.endTransmission();
-  i2c_serial_buf_used = 0;
-  delay(5);
-}
-
-uint8_t i2c_serial_available() {
-  TinyWireM.beginTransmission(I2C_SERIAL);
-  TinyWireM.write(I2C_SERIAL_AVAILABLE);
-  TinyWireM.endTransmission();
-  delay(5);
-  TinyWireM.requestFrom(I2C_SERIAL,1);
-  uint8_t res = TinyWireM.receive();
-  return res;
-}
-
-uint8_t i2c_serial_read() {
-  TinyWireM.beginTransmission(I2C_SERIAL);
-  TinyWireM.write(I2C_SERIAL_READ);
-  TinyWireM.endTransmission();
-  delay(5);
-  TinyWireM.requestFrom(I2C_SERIAL,1);
-  uint8_t res = TinyWireM.receive();
-  return res;
 }
