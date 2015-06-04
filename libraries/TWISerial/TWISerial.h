@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 
-#define TWI_SERIAL_BUF_SIZE    18              // bytes in message buffer
+#define TWI_SERIAL_BUF_SIZE    10 // bytes in message buffer
 
 class TWI_SERIAL : public Print
 {

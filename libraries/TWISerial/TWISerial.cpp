@@ -22,13 +22,12 @@ void TWI_SERIAL::begin() {
 }
 
 size_t TWI_SERIAL::write(uint8_t data) {
-  _buf[_bufIdx] = data;
-  _bufIdx++;
   if(_bufIdx >= TWI_SERIAL_BUF_SIZE)
     flush();
   
-  _buf[_bufIdx] = '.';
+  _buf[_bufIdx] = data;
   _bufIdx++;
+  
   if(_bufIdx >= TWI_SERIAL_BUF_SIZE)
     flush();
   
@@ -37,35 +36,32 @@ size_t TWI_SERIAL::write(uint8_t data) {
 
 void TWI_SERIAL::flush(void) {
   TinyWireM.beginTransmission(_slaveAddr);
-  TinyWireM.send(TWI_SERIAL_PRINT);
-  TinyWireM.send(_bufIdx);
+  TinyWireM.write(TWI_SERIAL_PRINT);
+  TinyWireM.write(_bufIdx);
   for(int i=0; i<_bufIdx; i++) {
-    TinyWireM.send(_buf[i]);
+    TinyWireM.write(_buf[i]);
   }
   TinyWireM.endTransmission();
-  delay(100);
   _bufIdx = 0;
 }
 
 uint8_t TWI_SERIAL::available() {
   TinyWireM.beginTransmission(_slaveAddr);
-  TinyWireM.send(TWI_SERIAL_AVAILABLE);
+  TinyWireM.write(TWI_SERIAL_AVAILABLE);
   TinyWireM.endTransmission();
-  delay(100);
+  delay(5);
   TinyWireM.requestFrom(_slaveAddr,1);
   uint8_t res = TinyWireM.receive();
-  delay(100);
   return res;
 }
 
 uint8_t TWI_SERIAL::read() {
   TinyWireM.beginTransmission(_slaveAddr);
-  TinyWireM.send(TWI_SERIAL_READ);
+  TinyWireM.write(TWI_SERIAL_READ);
   TinyWireM.endTransmission();
-  delay(100);
+  delay(5);
   TinyWireM.requestFrom(_slaveAddr,1);
   uint8_t res = TinyWireM.receive();
-  delay(100);
   return res;
 }
 

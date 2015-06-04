@@ -47,13 +47,13 @@ void setup() {
   // Start I2C
   TinyWireM.begin();
 
-  TWISerial.println("");
-  TWISerial.println("");
-  TWISerial.println("TinySleep 1.0");
-  TWISerial.println("");
-  TWISerial.println("Commands:");
-  TWISerial.println(" d Dump EEPROM");
-  TWISerial.println("");
+  TWISerial.println();
+  TWISerial.println();
+  TWISerial.println(F("TinySleep 1.0"));
+  TWISerial.println();
+  TWISerial.println(F("Commands:"));
+  TWISerial.println(F(" d Dump EEPROM"));
+  TWISerial.println();
   TWISerial.flush();
 }
 
@@ -68,7 +68,7 @@ void loop() {
         dump_eeprom();
       break;
       default:
-        TWISerial.print("Unknown command: ");
+        TWISerial.print(F("Unknown command: "));
         TWISerial.println(cmd);
     }
   }
@@ -76,7 +76,7 @@ void loop() {
   sleep();
   
   uint8_t hr = hr_measure();
-  TWISerial.print("HR: ");
+  TWISerial.print(F("HR: "));
   TWISerial.println(hr);
   TWISerial.flush();
 }
@@ -118,10 +118,10 @@ uint8_t hr_measure() {
     while(hr_level);
     
     time = millis()-time;
-    TWISerial.print("T: ");
+    TWISerial.print(F("T: "));
     TWISerial.print(time);
     TWISerial.print(60000/time);
-    TWISerial.println(")");
+    TWISerial.println(F(")"));
     TWISerial.flush();
     time = millis();
   }
@@ -139,7 +139,7 @@ void dump_eeprom() {
   for(int j=0; j<32; j++) {
     toHex(buf,addr,4);
     TWISerial.print(buf);
-    TWISerial.print(": ");
+    TWISerial.print(F(": "));
     for(int i=0; i<16; i++){
       toHex(buf,i,2);
       TWISerial.print(buf);
