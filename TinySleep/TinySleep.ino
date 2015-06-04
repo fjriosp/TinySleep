@@ -6,8 +6,7 @@
 #include <TinyWireM.h>
 #include <TWISerial.h>
 
-//5.430 github
-
+#define TIMEOUT(t) if(millis()>=t) return -1;
 
 // TWISerial
 const uint8_t TWI_SERIAL_ADDR = 0x08;
@@ -99,36 +98,45 @@ ISR(PCINT0_vect) {
 //#############
 
 uint8_t hr_measure() {
+  const unsigned long maxtime = millis() + 8 * 2000;
+  
+  uint16_t hr = 0;
+  
   digitalWrite(PIN_HRPWR, HIGH);
   digitalWrite(PIN_ALARM, HIGH);
   
   // Wait level up
-  while(hr_level);
+  while(hr_level) TIMEOUT(maxtime);
   // Wait level down
-  while(!hr_level);
+  while(!hr_level) TIMEOUT(maxtime);
   // Wait level up
-  while(hr_level);
+  while(hr_level) TIMEOUT(maxtime);
   
+  unsigned long mtime;
   unsigned long time = millis();
   
-  for(int i=0; i<10; i++) {
+  for(int i=0; i<8; i++) {
     // Wait level down
-    while(!hr_level);
+    while(!hr_level) TIMEOUT(maxtime);
     // Wait level up
-    while(hr_level);
+    while(hr_level) TIMEOUT(maxtime);
     
-    time = millis()-time;
-    TWISerial.print(F("T: "));
-    TWISerial.print(time);
-    TWISerial.print(60000/time);
-    TWISerial.println(F(")"));
-    TWISerial.flush();
+    mtime = millis()-time;
     time = millis();
+    
+    hr += 60000/mtime;
+    
+    TWISerial.print(F("T: "));
+    TWISerial.print(mtime);
+    TWISerial.print(F(" ("));
+    TWISerial.print(60000/mtime);
+    TWISerial.println(F(") "));
+    TWISerial.flush();
   }
   
   digitalWrite(PIN_HRPWR, LOW);
   digitalWrite(PIN_ALARM, LOW);
-  return 0;
+  return hr/8;
 }
 
 void dump_eeprom() {
@@ -209,3 +217,4 @@ void wdt_interrupt_disable() {
   WDTCR =  0;                    // Disable WDT
   sei();                         // Enable Interrupts
 }
+
