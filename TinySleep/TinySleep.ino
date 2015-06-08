@@ -6,7 +6,7 @@
 #include <TinyWireM.h>
 #include <TWISerial.h>
 
-#define TIMEOUT(t) if(millis()>=t) return -1;
+#define TIMEOUT(t,v) if(millis()>=(t)) return (v);
 
 // TWISerial
 const uint8_t TWI_SERIAL_ADDR = 0x08;
@@ -18,13 +18,28 @@ const uint8_t PIN_HRPWR = 4;
 
 // Globals
 volatile uint8_t sleeping  = 0;
-volatile uint8_t hr_level  = 0;
+volatile uint8_t hr_beats  = 0;
 
 TWI_SERIAL TWISerial = TWI_SERIAL(TWI_SERIAL_ADDR);
 
+// HR
+const uint8_t HR_NBEATS = 5;
+
+const uint8_t HR_OFF     = 0;
+const uint8_t HR_WARM    = 1;
+const uint8_t HR_MEASURE = 2;
+
+uint8_t hr_status;
+unsigned long hr_start;
+unsigned long hr_time;
+
+uint16_t hr = 0;
+
+// LowPower
+unsigned long real_millis;
+unsigned long last_millis;
+
 void setup() {
-  wdt_interrupt_enable();
-  
   // Calibrate clock
   OSCCAL = 0x54;
   
@@ -46,97 +61,73 @@ void setup() {
   // Start I2C
   TinyWireM.begin();
 
-  TWISerial.println();
-  TWISerial.println();
-  TWISerial.println(F("TinySleep 1.0"));
-  TWISerial.println();
-  TWISerial.println(F("Commands:"));
-  TWISerial.println(F(" d Dump EEPROM"));
-  TWISerial.println();
-  TWISerial.flush();
+  menu_help();
+  hr_warm();
 }
 
 void loop() {
+  menu_loop();
+  hr_loop();
+  sleep(1);
+}
+
+//##############
+//# Interrupts #
+//##############
+ISR(WDT_vect) {
+  // WakeUp!
+  sleeping++;
+}
+
+ISR(PCINT0_vect) {
+  if(digitalRead(PIN_HR))
+    hr_beats++;
+  digitalWrite(PIN_ALARM, digitalRead(PIN_HR));
+}
+
+//########
+//# Menu #
+//########
+void menu_loop() {
   uint8_t n = TWISerial.available();
   
   while(n > 0) {
     char cmd = TWISerial.read();
     n--;
     switch(cmd) {
+      case 'h':
+        menu_help();
+        break;
       case 'd':
         dump_eeprom();
-      break;
+        break;
+      case 'c':
+        show_cpu_stats();
+        break;
+      case 'm':
+        show_mem_stats();
+        break;
       default:
         TWISerial.print(F("Unknown command: "));
         TWISerial.println(cmd);
     }
   }
-
-  sleep();
   
-  uint8_t hr = hr_measure();
-  TWISerial.print(F("HR: "));
-  TWISerial.println(hr);
   TWISerial.flush();
 }
 
-//##############
-//# Interrupts #
-//##############
-
-ISR(WDT_vect) {
-  // WakeUp!
-  sleeping = 0;
-}
-
-ISR(PCINT0_vect) {
-  hr_level = digitalRead(PIN_HR);
-}
-
-//#############
-//# TinySleep #
-//#############
-
-uint8_t hr_measure() {
-  const unsigned long maxtime = millis() + 8 * 2000;
-  
-  uint16_t hr = 0;
-  
-  digitalWrite(PIN_HRPWR, HIGH);
-  digitalWrite(PIN_ALARM, HIGH);
-  
-  // Wait level up
-  while(hr_level) TIMEOUT(maxtime);
-  // Wait level down
-  while(!hr_level) TIMEOUT(maxtime);
-  // Wait level up
-  while(hr_level) TIMEOUT(maxtime);
-  
-  unsigned long mtime;
-  unsigned long time = millis();
-  
-  for(int i=0; i<8; i++) {
-    // Wait level down
-    while(!hr_level) TIMEOUT(maxtime);
-    // Wait level up
-    while(hr_level) TIMEOUT(maxtime);
-    
-    mtime = millis()-time;
-    time = millis();
-    
-    hr += 60000/mtime;
-    
-    TWISerial.print(F("T: "));
-    TWISerial.print(mtime);
-    TWISerial.print(F(" ("));
-    TWISerial.print(60000/mtime);
-    TWISerial.println(F(") "));
-    TWISerial.flush();
-  }
-  
-  digitalWrite(PIN_HRPWR, LOW);
-  digitalWrite(PIN_ALARM, LOW);
-  return hr/8;
+void menu_help() {
+  TWISerial.println();
+  TWISerial.println();
+  TWISerial.println(F("TinySleep 1.0"));
+  TWISerial.println();
+  TWISerial.println(F("Commands:"));
+  TWISerial.println(F(" h Show this help"));
+  TWISerial.println(F(" d Dump EEPROM"));
+  TWISerial.println(F(" c Show cpu stats"));
+  TWISerial.println(F(" m Show mem stats"));
+  TWISerial.println();
+  TWISerial.flush();
 }
 
 void dump_eeprom() {
@@ -170,22 +161,121 @@ void toHex(char* buf, unsigned int n, uint8_t len) {
   }
 }
 
+void show_cpu_stats() {
+  TWISerial.print(F("Total:    "));
+  TWISerial.println(rmillis());
+  TWISerial.print(F("Running:  "));
+  TWISerial.println(millis());
+  TWISerial.print(F("Sleeping: "));
+  TWISerial.println(rmillis()-millis());
+  TWISerial.flush();
+}
+
+void show_mem_stats() {
+  TWISerial.println(F("Unimplemented..."));
+  TWISerial.flush();
+}
+
+//#############
+//# HeartRate #
+//#############
+void hr_loop() {
+  switch(hr_status) {
+    case HR_OFF:
+      // Take the HR each minute
+      if(rmillis() - hr_start >= 60000) {
+        hr_warm();
+      }
+      break;
+    case HR_WARM:
+      // Ignore the first 2 seconds
+      if(rmillis() - hr_start >= 2000) {
+        if(hr_begin_measure()!=0) {
+          hr_off();
+        }
+      }
+      break;
+    case HR_MEASURE:
+      // Listen beats in 5 seconds
+      if(rmillis() - hr_time >= 5000) {
+        if(hr_end_measure()!=0) {
+          hr_off();
+        }
+      }
+      break;
+  }
+}
+
+uint8_t hr_warm() {
+  TWISerial.println(F("hr_warm()"));
+  hr_start = rmillis();
+  digitalWrite(PIN_HRPWR, HIGH);
+  hr_status = HR_WARM;
+  return 0;
+}
+
+uint8_t hr_begin_measure() {
+  TWISerial.println(F("hr_begin_measure()"));
+  // Wait Rise edge
+  unsigned long t = millis() + 2000;
+  while(digitalRead(PIN_HR)==1) TIMEOUT(t,1);
+  while(digitalRead(PIN_HR)==0) TIMEOUT(t,1);
+  // Start to count beats
+  hr_time = rmillis();
+  hr_beats = 0;
+  hr_status = HR_MEASURE;
+  return 0;
+}
+
+uint8_t hr_end_measure() {
+  TWISerial.println(F("hr_end_measure()"));
+  // Wait Rise edge
+  unsigned long t = millis() + 2000;
+  while(digitalRead(PIN_HR)==1) TIMEOUT(t,1);
+  while(digitalRead(PIN_HR)==0) TIMEOUT(t,1);
+  // Calc HeartRate
+  hr = (((unsigned long)hr_beats)*60000)/(rmillis()-hr_time);
+  
+  TWISerial.print(F("HR: "));
+  TWISerial.println(hr);
+  TWISerial.flush();
+  
+  return hr_off();
+}
+
+uint8_t hr_off() {
+  TWISerial.println(F("hr_off()"));
+  digitalWrite(PIN_HRPWR, LOW);
+  hr_status = HR_OFF;
+  return 0;
+}
+
 //#############
 //# Low Power #
 //#############
 
-void sleep() {
+unsigned long rmillis() {
+  unsigned long t = millis();
+  real_millis += t - last_millis;
+  last_millis = t;
+  return real_millis;
+}
+
+void sleep(int nsec) {
+  // Prevent false wdt reset
+  wdt_reset();
+  // Configure the wdt
+  wdt_interrupt_enable();
+  
   // Set sleeping flag
   sleeping = 1;
-  
-  wdt_reset();
-  wdt_interrupt_enable();
   
   // Set sleep to full power down.  Only external interrupts or 
   // the watchdog timer can wake the CPU!
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
   
-  while(sleeping) {
+  unsigned long t = millis();
+  while(sleeping <= nsec) {
     // Enable sleep and enter sleep mode.
     sleep_mode();
     
@@ -193,6 +283,7 @@ void sleep() {
     // Once awake, execution will resume at this point.
     // If the flag sleeping is 1, we will go to sleep again.
   }
+  real_millis += (nsec*1000) - (millis() - t); // real_millis += sleeped - awake
   
   wdt_interrupt_disable();
   
@@ -205,7 +296,7 @@ void wdt_interrupt_enable() {
   cli();                         // Disable Interrupts
   WDTCR |= _BV(WDCE) | _BV(WDE); // Enable the WD Change Bit
   WDTCR =  _BV(WDIE) |           // Enable WDT Interrupt
-           _BV(WDP0) | _BV(WDP3);// Set Timeout to ~8 seconds
+           _BV(WDP1) | _BV(WDP2);// Set Timeout to ~1 seconds
   WDTCR |= _BV(WDIE);            // Enable watchdog as interrupt
   sei();                         // Enable Interrupts
 }
