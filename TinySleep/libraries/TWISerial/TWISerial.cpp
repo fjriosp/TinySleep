@@ -81,3 +81,4 @@ uint8_t TWI_SERIAL::read() {
 uint8_t TWI_SERIAL::isError() {
   return _error;
 }
+
