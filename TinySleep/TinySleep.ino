@@ -98,6 +98,11 @@ ISR(PCINT0_vect) {
 void menu_loop() {
   uint8_t n = TWISerial.available();
   
+  if(TWISerial.isError()) {
+    // Disable the serial?
+    n=0;
+  }
+  
   while(n > 0) {
     char cmd = TWISerial.read();
     n--;
