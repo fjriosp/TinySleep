@@ -30,6 +30,7 @@ const uint8_t HR_WARM    = 1;
 const uint8_t HR_MEASURE = 2;
 
 uint8_t hr_status;
+unsigned long hr_ontime = 0;
 unsigned long hr_start;
 unsigned long hr_time;
 
@@ -38,6 +39,16 @@ uint16_t hr = 0;
 // LowPower
 unsigned long real_millis;
 unsigned long last_millis;
+
+// Mem
+extern uint8_t __data_start;
+extern uint8_t __data_end;
+extern uint8_t __bss_start;
+extern uint8_t __bss_end;
+extern uint8_t __heap_start;
+extern uint8_t *    __brkval;
+
+const uint8_t STACK_CANARY=0xAA;
 
 void setup() {
   // Calibrate clock
@@ -53,10 +64,6 @@ void setup() {
   pinMode(PIN_HR, INPUT);
   pinMode(PIN_ALARM, OUTPUT);
   pinMode(PIN_HRPWR, OUTPUT);
-  
-  // Enable HR Interrupt
-  GIMSK |= _BV(PCIE);   // Enable Pin Change Interrupts
-  PCMSK |= _BV(PCINT1); // Use PB1 as interrupt pin
   
   // Start I2C
   TinyWireM.begin();
@@ -107,6 +114,9 @@ void menu_loop() {
       case 'm':
         show_mem_stats();
         break;
+      case 't':
+        power_test();
+        break;
       default:
         TWISerial.print(F("Unknown command: "));
         TWISerial.println(cmd);
@@ -126,7 +136,43 @@ void menu_help() {
   TWISerial.println(F(" d Dump EEPROM"));
   TWISerial.println(F(" c Show cpu stats"));
   TWISerial.println(F(" m Show mem stats"));
+  TWISerial.println(F(" t Power test"));
   TWISerial.println();
+  TWISerial.flush();
+}
+
+void power_test() {
+  digitalWrite(PIN_HRPWR, LOW);
+  
+  TWISerial.println();
+  
+  TWISerial.println(F("1. All off"));
+  TWISerial.flush();
+  while(TWISerial.available()==0) {
+    sleep(1);
+  }
+  TWISerial.read();
+  
+  TWISerial.println(F("2. CPU running"));
+  TWISerial.flush();
+  while(TWISerial.available()==0);
+  TWISerial.read();
+  
+  digitalWrite(PIN_HRPWR, HIGH);
+  TWISerial.println(F("3. HR running"));
+  TWISerial.flush();
+  while(TWISerial.available()==0) {
+    sleep(1);
+  }
+  TWISerial.read();
+  
+  digitalWrite(PIN_HRPWR, HIGH);
+  TWISerial.println(F("3. ALL running"));
+  TWISerial.flush();
+  while(TWISerial.available()==0);
+  TWISerial.read();
+  
+  TWISerial.println(F("End of test."));
   TWISerial.flush();
 }
 
@@ -162,17 +208,51 @@ void toHex(char* buf, unsigned int n, uint8_t len) {
 }
 
 void show_cpu_stats() {
+  unsigned long total    = rmillis();
+  unsigned long running  = millis();
+  unsigned long sleeping = total - running;
+  
   TWISerial.print(F("Total:    "));
-  TWISerial.println(rmillis());
+  TWISerial.println(total);
+  TWISerial.print(F("HR:       "));
+  TWISerial.print(hr_ontime);
+  TWISerial.print(F("("));
+  TWISerial.print((hr_ontime*100)/total);
+  TWISerial.println(F(")"));
   TWISerial.print(F("Running:  "));
-  TWISerial.println(millis());
+  TWISerial.print(running);
+  TWISerial.print(F("("));
+  TWISerial.print((running*100)/total);
+  TWISerial.println(F(")"));
   TWISerial.print(F("Sleeping: "));
-  TWISerial.println(rmillis()-millis());
+  TWISerial.print(sleeping);
+  TWISerial.print(F("("));
+  TWISerial.print((sleeping*100)/total);
+  TWISerial.println(F(")"));
   TWISerial.flush();
 }
 
 void show_mem_stats() {
-  TWISerial.println(F("Unimplemented..."));
+  uint16_t total_size = RAMEND-((uint16_t)&__data_start)+1;
+  uint16_t data_size  = ((uint16_t)&__data_end)-((uint16_t)&__data_start);
+  uint16_t bss_size   = ((uint16_t)&__bss_end)-((uint16_t)&__bss_start);
+  uint16_t heap_size  = ((uint16_t)__brkval) == 0 ? 0 : (((uint16_t)__brkval)-((uint16_t)&__heap_start));
+  uint16_t stack_size = RAMEND-SP;
+  uint16_t total_used = data_size+bss_size+heap_size+stack_size;
+  TWISerial.print(F("Total:  "));
+  TWISerial.println(total_size);
+  TWISerial.print(F("Data:   "));
+  TWISerial.println(data_size);
+  TWISerial.print(F("BSS:    "));
+  TWISerial.println(bss_size);
+  TWISerial.print(F("Heap:   "));
+  TWISerial.println(heap_size);
+  TWISerial.print(F("Stack:  "));
+  TWISerial.println(stack_size);
+  TWISerial.print(F("Free:   "));
+  TWISerial.println(RAMEND-total_used);
+  TWISerial.print(F("Unused: "));
+  TWISerial.println(mem_unused());
   TWISerial.flush();
 }
 
@@ -208,6 +288,11 @@ void hr_loop() {
 
 uint8_t hr_warm() {
   TWISerial.println(F("hr_warm()"));
+  
+  // Enable HR Interrupt
+  GIMSK |= _BV(PCIE);   // Enable Pin Change Interrupts
+  PCMSK |= _BV(PCINT1); // Use PB1 as interrupt pin
+  
   hr_start = rmillis();
   digitalWrite(PIN_HRPWR, HIGH);
   hr_status = HR_WARM;
@@ -246,6 +331,12 @@ uint8_t hr_end_measure() {
 uint8_t hr_off() {
   TWISerial.println(F("hr_off()"));
   digitalWrite(PIN_HRPWR, LOW);
+  digitalWrite(PIN_ALARM, LOW);
+  
+  // Disable HR Interrupt
+  PCMSK &= ~_BV(PCINT1); // Disable PB1 as interrupt pin
+  
+  hr_ontime += rmillis() - hr_start;
   hr_status = HR_OFF;
   return 0;
 }
@@ -307,5 +398,37 @@ void wdt_interrupt_disable() {
   WDTCR |= _BV(WDCE) | _BV(WDE); // Enable the WD Change Bit
   WDTCR =  0;                    // Disable WDT
   sei();                         // Enable Interrupts
+}
+
+//#############
+//# Mem Trace #
+//#############
+__attribute__ ((naked,section (".init1")))
+void mem_paint(void) {
+  uint8_t *p = __brkval==0 ? &__heap_start : __brkval;
+  
+  while((uint16_t)p <= SP)
+  {
+      *p = STACK_CANARY;
+      p++;
+  }
+}
+
+uint16_t mem_unused() {
+  uint8_t *p = __brkval==0 ? &__heap_start : __brkval;
+  
+  uint16_t c = 0;
+  uint16_t maxc = 0;
+  // Search max contiguous bytes with value STACK_CANARY
+  while(p <= (uint8_t*)SP) {
+    if(*p == STACK_CANARY) {
+      c++;
+    } else if(c > maxc) {
+      maxc = c;
+    }
+    p++;
+  }
+  
+  return maxc;
 }
 
