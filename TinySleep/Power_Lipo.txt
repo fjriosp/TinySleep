@@ -1,0 +1,50 @@
+1. All off		0.230 mA
+2. CPU running		1.355 mA
+3. HR running		1.350 mA (HR= 1.120 mA)
+3. ALL running		2.550 mA (HR= 1,195 mA)
+
+Sleep = 0.230 mA
+CPU   = 1.355 mA
+HR    = 1.200 mA
+
+
+Con dedo:
+
+Total:    870642
+HR:       119567(13)
+Running:  20889(2)
+Sleeping: 849753(97)
+
+Total:  512
+Data:   16
+BSS:    76
+Heap:   0
+Stack:  22
+Free:   493
+Unused: 296
+
+Sin dedo:
+Total:    1362115
+HR:       92727(6)
+Running:  57131(4)
+Sleeping: 1304984(95)
+Total:  512
+Data:   16
+BSS:    76
+Heap:   0
+Stack:  22
+Free:   493
+Unused: 307
+
+Sin I2C:
+Total:    1252554
+HR:       1043886(83)
+Running:  1113784(88)
+Sleeping: 138770(11)
+Total:  512
+Data:   16
+BSS:    76
+Heap:   0
+Stack:  22
+Free:   493
+Unused: 307
