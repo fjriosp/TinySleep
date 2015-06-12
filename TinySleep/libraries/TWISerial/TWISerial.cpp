@@ -11,6 +11,7 @@ uint8_t TWI_SERIAL::_buf[TWI_SERIAL_BUF_SIZE]; // holds send and receive data
 uint8_t TWI_SERIAL::_bufIdx = 0;               // current number of bytes in the send buff
 uint8_t TWI_SERIAL::_slaveAddr = 0x08;         // default slave addr
 uint8_t TWI_SERIAL::_error = 0;                // init error flag
+uint8_t TWI_SERIAL::_enabled = 1;              // is enabled?
 
 // Constructors
 TWI_SERIAL::TWI_SERIAL(uint8_t slaveAddr) {
@@ -23,6 +24,8 @@ void TWI_SERIAL::begin() {
 }
 
 size_t TWI_SERIAL::write(uint8_t data) {
+  if(!_enabled) return 0;
+  
   if(_bufIdx >= TWI_SERIAL_BUF_SIZE)
     flush();
   
@@ -35,7 +38,9 @@ size_t TWI_SERIAL::write(uint8_t data) {
   return 1;
 }
 
-void TWI_SERIAL::flush(void) {
+void TWI_SERIAL::flush() {
+  if(!_enabled) return;
+  
   TinyWireM.beginTransmission(_slaveAddr);
   TinyWireM.write(TWI_SERIAL_PRINT);
   TinyWireM.write(_bufIdx);
@@ -47,6 +52,8 @@ void TWI_SERIAL::flush(void) {
 }
 
 uint8_t TWI_SERIAL::available() {
+  if(!_enabled) return 0;
+  
   TinyWireM.beginTransmission(_slaveAddr);
   TinyWireM.write(TWI_SERIAL_AVAILABLE);
   _error = TinyWireM.endTransmission();
@@ -63,6 +70,8 @@ uint8_t TWI_SERIAL::available() {
 }
 
 uint8_t TWI_SERIAL::read() {
+  if(!_enabled) return 0;
+  
   TinyWireM.beginTransmission(_slaveAddr);
   TinyWireM.write(TWI_SERIAL_READ);
   _error = TinyWireM.endTransmission();
@@ -77,8 +86,3 @@ uint8_t TWI_SERIAL::read() {
   uint8_t res = TinyWireM.receive();
   return res;
 }
-
-uint8_t TWI_SERIAL::isError() {
-  return _error;
-}
-

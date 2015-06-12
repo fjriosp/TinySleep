@@ -68,7 +68,6 @@ void setup() {
   // Start I2C
   TinyWireM.begin();
 
-  menu_help();
   hr_warm();
 }
 
@@ -86,7 +85,10 @@ ISR(WDT_vect) {
   sleeping++;
 }
 
+unsigned long cnt1=0;
+
 ISR(PCINT0_vect) {
+  cnt1++;
   if(digitalRead(PIN_HR))
     hr_beats++;
   digitalWrite(PIN_ALARM, digitalRead(PIN_HR));
@@ -96,11 +98,12 @@ ISR(PCINT0_vect) {
 //# Menu #
 //########
 void menu_loop() {
+  TWISerial.setEnabled(1);
   uint8_t n = TWISerial.available();
   
   if(TWISerial.isError()) {
-    // Disable the serial?
-    n=0;
+    TWISerial.setEnabled(0);
+    n = 0;
   }
   
   while(n > 0) {
@@ -123,6 +126,8 @@ void menu_loop() {
         power_test();
         break;
       default:
+        TWISerial.print(F("CNT1: "));
+        TWISerial.println(cnt1);
         TWISerial.print(F("Unknown command: "));
         TWISerial.println(cmd);
     }
