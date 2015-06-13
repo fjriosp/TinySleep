@@ -1,10 +1,10 @@
-1. All off		0.230 mA
-2. CPU running		1.355 mA
-3. HR running		1.350 mA (HR= 1.120 mA)
+1. All off		0.225 mA
+2. CPU running		1.220 mA
+3. HR running		1.280 mA (HR= 1.120 mA)
 3. ALL running		2.550 mA (HR= 1,195 mA)
 
-Sleep = 0.230 mA
-CPU   = 1.355 mA
+Sleep = 0.225 mA
+CPU   = 1.230 mA
 HR    = 1.200 mA
 
 

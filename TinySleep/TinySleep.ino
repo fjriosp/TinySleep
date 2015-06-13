@@ -56,6 +56,7 @@ void setup() {
   
   // Disable unused HW
   power_adc_disable();
+  power_timer1_disable();
   
   // Configure IO
   digitalWrite(PIN_ALARM, LOW);
@@ -159,7 +160,7 @@ void power_test() {
   TWISerial.println(F("1. All off"));
   TWISerial.flush();
   while(TWISerial.available()==0) {
-    sleep(1);
+    sleep(10);
   }
   TWISerial.read();
   
@@ -172,7 +173,7 @@ void power_test() {
   TWISerial.println(F("3. HR running"));
   TWISerial.flush();
   while(TWISerial.available()==0) {
-    sleep(1);
+    sleep(10);
   }
   TWISerial.read();
   
