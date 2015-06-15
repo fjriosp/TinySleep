@@ -3,7 +3,6 @@
 #include <avr/wdt.h>
 #include <avr/interrupt.h>
 
-#include <TinyWireM.h>
 #include <TWISerial.h>
 #include <TWIEEPROM.h>
 
@@ -16,11 +15,12 @@ const uint8_t EEPROM_DEVADDR = 0xA0;
 const uint8_t TWI_SERIAL_ADDR = 0x08;
 
 // Pins
+const uint8_t PIN_SDA   = 0;
+const uint8_t PIN_SCL   = 2;
+
 const uint8_t PIN_HR    = 1;
 const uint8_t PIN_ALARM = 3;
 const uint8_t PIN_HRPWR = 4;
-const uint8_t PIN_SDA   = 0;
-const uint8_t PIN_SCL   = 2;
 
 // Globals
 volatile uint8_t sleeping  = 0;
@@ -73,8 +73,8 @@ void setup() {
   pinMode(PIN_ALARM, OUTPUT);
   pinMode(PIN_HRPWR, OUTPUT);
   
-  // Start I2C
-  TinyWireM.begin();
+  // Configure I2C
+  PIN_SDA
 
   hr_warm();
 }
