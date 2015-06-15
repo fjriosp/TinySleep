@@ -1,20 +1,18 @@
-1. All off		0.225 mA
-2. CPU running		1.220 mA
-3. HR running		1.280 mA (HR= 1.120 mA)
-3. ALL running		2.550 mA (HR= 1,195 mA)
+1. All off		0.005 mA
+2. CPU running		0.985 mA
+3. HR running		1.047 mA (HR= 1.040 mA)
+3. ALL running		1.970 mA (HR= 1.040 mA)
 
-Sleep = 0.225 mA
-CPU   = 1.230 mA
-HR    = 1.200 mA
+Sleep = 0.005 mA
+CPU   = 0.985 mA
+HR    = 1.040 mA
 
 
 Con dedo:
-
-
-Total:    870642        (0.4062 mA)
-HR:       119567(13)	(0.1560 mA)
-Running:  20889(2)	(0.0271 mA)
-Sleeping: 849753(97)	(0.2231 mA)
+Total:    870642        (0,15975 mA)
+HR:       119567(13)	(0,13520 mA)
+Running:  20889(2)	(0,01970 mA)
+Sleeping: 849753(97)	(0,00485 mA)
 
 Total:  512
 Data:   16

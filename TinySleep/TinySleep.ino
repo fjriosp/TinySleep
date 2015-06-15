@@ -5,8 +5,12 @@
 
 #include <TinyWireM.h>
 #include <TWISerial.h>
+#include <TWIEEPROM.h>
 
 #define TIMEOUT(t,v) if(millis()>=(t)) return (v);
+
+// EEPROM
+const uint8_t EEPROM_DEVADDR = 0xA0;
 
 // TWISerial
 const uint8_t TWI_SERIAL_ADDR = 0x08;
@@ -15,12 +19,15 @@ const uint8_t TWI_SERIAL_ADDR = 0x08;
 const uint8_t PIN_HR    = 1;
 const uint8_t PIN_ALARM = 3;
 const uint8_t PIN_HRPWR = 4;
+const uint8_t PIN_SDA   = 0;
+const uint8_t PIN_SCL   = 2;
 
 // Globals
 volatile uint8_t sleeping  = 0;
 volatile uint8_t hr_beats  = 0;
 
 TWI_SERIAL TWISerial = TWI_SERIAL(TWI_SERIAL_ADDR);
+TWI_EEPROM TWIEEPROM = TWI_EEPROM(EEPROM_DEVADDR);
 
 // HR
 const uint8_t HR_NBEATS = 5;
@@ -46,7 +53,7 @@ extern uint8_t __data_end;
 extern uint8_t __bss_start;
 extern uint8_t __bss_end;
 extern uint8_t __heap_start;
-extern uint8_t *    __brkval;
+extern uint8_t *__brkval;
 
 const uint8_t STACK_CANARY=0xAA;
 
@@ -55,8 +62,8 @@ void setup() {
   OSCCAL = 0x54;
   
   // Disable unused HW
-  power_adc_disable();
-  power_timer1_disable();
+  ADCSRA &= ~_BV(ADEN);
+  PRR    &= ~_BV(PRADC) | ~_BV(PRTIM1);
   
   // Configure IO
   digitalWrite(PIN_ALARM, LOW);
@@ -188,17 +195,20 @@ void power_test() {
 }
 
 void dump_eeprom() {
-  char buf[16];
+  const uint8_t BUFLEN=16;
+  uint8_t buf[BUFLEN];
+  char str[16];
   int addr = 0;
   
-  // 32 lines of 16 bytes = 512 bytes
-  for(int j=0; j<32; j++) {
-    toHex(buf,addr,4);
-    TWISerial.print(buf);
+  // lines of 16 bytes
+  while(addr < 32*1024) {
+    toHex(str,addr,4);
+    TWISerial.print(str);
     TWISerial.print(F(": "));
-    for(int i=0; i<16; i++){
-      toHex(buf,i,2);
-      TWISerial.print(buf);
+    TWIEEPROM.read(addr,buf,BUFLEN);
+    for(int i=0; i<BUFLEN; i++){
+      toHex(str,buf[i],2);
+      TWISerial.print(str);
       addr++;
     }
     TWISerial.println();
@@ -299,7 +309,6 @@ void hr_loop() {
 
 uint8_t hr_warm() {
   TWISerial.println(F("hr_warm()"));
-  
   // Enable HR Interrupt
   GIMSK |= _BV(PCIE);   // Enable Pin Change Interrupts
   PCMSK |= _BV(PCINT1); // Use PB1 as interrupt pin
@@ -355,7 +364,6 @@ uint8_t hr_off() {
 //#############
 //# Low Power #
 //#############
-
 unsigned long rmillis() {
   unsigned long t = millis();
   real_millis += t - last_millis;

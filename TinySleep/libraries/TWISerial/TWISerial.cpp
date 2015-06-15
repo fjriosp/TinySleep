@@ -39,7 +39,10 @@ size_t TWI_SERIAL::write(uint8_t data) {
 }
 
 void TWI_SERIAL::flush() {
-  if(!_enabled) return;
+  if(!_enabled) {
+    _bufIdx = 0;
+    return;
+  }
   
   TinyWireM.beginTransmission(_slaveAddr);
   TinyWireM.write(TWI_SERIAL_PRINT);
@@ -65,8 +68,10 @@ uint8_t TWI_SERIAL::available() {
   if(_error != 0) {
     return 0;
   }
-  uint8_t res = TinyWireM.receive();
-  return res;
+  if(TinyWireM.available()) {
+    return TinyWireM.read();
+  }
+  return 0;
 }
 
 uint8_t TWI_SERIAL::read() {
@@ -83,6 +88,8 @@ uint8_t TWI_SERIAL::read() {
   if(_error != 0) {
     return 0;
   }
-  uint8_t res = TinyWireM.receive();
-  return res;
+  if(TinyWireM.available()) {
+    return TinyWireM.read();
+  }
+  return 0;
 }

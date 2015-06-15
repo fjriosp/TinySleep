@@ -26,7 +26,5 @@ class TWI_SERIAL : public Print
     inline void setEnabled(uint8_t e) { _enabled = e; }
 };
 
-extern TWI_SERIAL TWISerial;
-
 #endif
 
