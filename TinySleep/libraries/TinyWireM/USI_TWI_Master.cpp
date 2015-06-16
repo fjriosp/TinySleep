@@ -287,6 +287,9 @@ unsigned char USI_TWI_Master_Transfer( unsigned char temp )
 ---------------------------------------------------------------*/
 unsigned char USI_TWI_Master_Start( void )
 {
+  DDR_USI  |= (1<<PIN_USI_SCL);           // Enable SCL as output.
+  DDR_USI  |= (1<<PIN_USI_SDA);           // Enable SDA as output.
+  
 /* Release SCL to ensure that (repeated) Start can be performed */
   PORT_USI |= (1<<PIN_USI_SCL);                     // Release SCL.
   while( !(PORT_USI & (1<<PIN_USI_SCL)) );          // Verify that SCL becomes high.
@@ -319,6 +322,9 @@ unsigned char USI_TWI_Master_Stop( void )
 	_delay_us(T4_TWI);
   PORT_USI |= (1<<PIN_USI_SDA);            // Release SDA.
 	_delay_us(T2_TWI);
+  
+  DDR_USI  &= ~(1<<PIN_USI_SCL);           // Enable SCL as input.
+  DDR_USI  &= ~(1<<PIN_USI_SDA);           // Enable SDA as input.
   
 #ifdef SIGNAL_VERIFY
   if( !(USISR & (1<<USIPF)) )

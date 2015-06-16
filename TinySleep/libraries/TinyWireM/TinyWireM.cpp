@@ -77,6 +77,7 @@ uint8_t USI_TWI::endTransmission(uint8_t stop){ // actually sends the buffer
   }
   else {                                  // there was an error
     errorCode = USI_TWI_Get_State_Info(); // this function returns the error number
+    USI_TWI_Master_Stop();                // send stop condition
     return errorCode;
   }
 }
@@ -100,6 +101,7 @@ uint8_t USI_TWI::requestFrom(uint8_t slaveAddr, uint8_t numBytes){ // setup for 
   }
   else {                                  // there was an error
     errorCode = USI_TWI_Get_State_Info(); // this function returns the error number
+    USI_TWI_Master_Stop();                // send stop condition
     return errorCode;
   }
 }
