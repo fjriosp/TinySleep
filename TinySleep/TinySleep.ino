@@ -238,17 +238,17 @@ void show_cpu_stats() {
   TWISerial.print(F("HR:       "));
   TWISerial.print(hr_ontime);
   TWISerial.print(F("("));
-  TWISerial.print((hr_ontime*100)/total);
+  TWISerial.print((hr_ontime*1000)/total);
   TWISerial.println(F(")"));
   TWISerial.print(F("Running:  "));
   TWISerial.print(running);
   TWISerial.print(F("("));
-  TWISerial.print((running*100)/total);
+  TWISerial.print((running*1000)/total);
   TWISerial.println(F(")"));
   TWISerial.print(F("Sleeping: "));
   TWISerial.print(sleeping);
   TWISerial.print(F("("));
-  TWISerial.print((sleeping*100)/total);
+  TWISerial.print((sleeping*1000)/total);
   TWISerial.println(F(")"));
   TWISerial.flush();
 }

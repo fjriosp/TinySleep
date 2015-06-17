@@ -1,51 +1,23 @@
 1. All off		0.005 mA
-2. CPU running		0.985 mA
-3. HR running		1.047 mA (HR= 1.040 mA)
-3. ALL running		1.970 mA (HR= 1.040 mA)
+2. CPU running		1.595 mA
+3. HR running		1.047 mA
+3. ALL running		2.750 mA
 
 Sleep = 0.005 mA
-CPU   = 0.985 mA
-HR    = 1.040 mA
+CPU   = 1.607 mA
+HR    = 1.100 mA
 
 
-Con dedo:
-Total:    870642        (0,15975 mA)
-HR:       119567(13)	(0,13520 mA)
-Running:  20889(2)	(0,01970 mA)
-Sleeping: 849753(97)	(0,00485 mA)
-
+Total:    146702      | 0,209831 mA
+HR:       23538(160)  | 0,176000 mA
+Running:  2736(18)    | 0,028926 mA
+Sleeping: 143966(981) | 0,004905 mA
 Total:  512
-Data:   16
-BSS:    76
+Data:   18
+BSS:    82
 Heap:   0
 Stack:  22
-Free:   493
-Unused: 296
-
-Sin dedo:
-Total:    1362115
-HR:       92727(6)
-Running:  57131(4)
-Sleeping: 1304984(95)
-Total:  512
-Data:   16
-BSS:    76
-Heap:   0
-Stack:  22
-Free:   493
-Unused: 307
-
-Sin I2C:
-Total:    21563525
-HR:       6320595(29)
-Running:  7524220(34)
-Sleeping: 14039305(65)
-Total:  512
-Data:   16
-BSS:    77
-Heap:   0
-Stack:  22
-Free:   492
-Unused: 295
+Free:   485
+Unused: 288
 
 
