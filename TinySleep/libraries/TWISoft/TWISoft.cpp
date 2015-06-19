@@ -1,33 +1,41 @@
 #include "TWISoft.h"
 
 //From DS1307 datasheet
+/*
 #define T_BUF    4.7
 #define T_LOW    4.7
 #define T_HIGH   4
 #define T_HD_STA 4
 #define T_SU_STA 4.7
 #define T_SU_STO 4.7
+*/
+#define T_BUF    0
+#define T_LOW    0
+#define T_HIGH   0
+#define T_HD_STA 0
+#define T_SU_STA 0
+#define T_SU_STO 0
 
 #define TWIDDR  DDRB
 #define TWIPORT PORTB
 #define TWIPIN  PINB
 
-inline void _ALL_output(){ TWIDDR  |=  (_BV(TWISDA) | _BV(TWISCL)); }
-inline void _ALL_input() { TWIDDR  &= ~(_BV(TWISDA) | _BV(TWISCL)); }
-inline void _ALL_H()     { TWIPORT |=  (_BV(TWISDA) | _BV(TWISCL)); }
+__attribute__((always_inline)) void _ALL_output(){ TWIDDR  |=  (_BV(TWISDA) | _BV(TWISCL)); }
+__attribute__((always_inline)) void _ALL_input() { TWIDDR  &= ~(_BV(TWISDA) | _BV(TWISCL)); }
+__attribute__((always_inline)) void _ALL_H()     { TWIPORT |=  (_BV(TWISDA) | _BV(TWISCL)); }
 
-inline void _SDA_output() { TWIDDR  |=  (_BV(TWISDA)); }
-inline void _SDA_input()  { TWIDDR  &= ~(_BV(TWISDA)); }
-inline void _SDA_H()      { TWIPORT |=  (_BV(TWISDA)); }
-inline void _SDA_L()      { TWIPORT &= ~(_BV(TWISDA)); }
+__attribute__((always_inline)) void _SDA_output() { TWIDDR  |=  (_BV(TWISDA)); }
+__attribute__((always_inline)) void _SDA_input()  { TWIDDR  &= ~(_BV(TWISDA)); }
+__attribute__((always_inline)) void _SDA_H()      { TWIPORT |=  (_BV(TWISDA)); }
+__attribute__((always_inline)) void _SDA_L()      { TWIPORT &= ~(_BV(TWISDA)); }
 
-inline void _SCL_output() { TWIDDR  |=  (_BV(TWISCL)); }
-inline void _SCL_input()  { TWIDDR  &= ~(_BV(TWISCL)); }
-inline void _SCL_H()      { TWIPORT |=  (_BV(TWISCL)); }
-inline void _SCL_L()      { TWIPORT &= ~(_BV(TWISCL)); }
+__attribute__((always_inline)) void _SCL_output() { TWIDDR  |=  (_BV(TWISCL)); }
+__attribute__((always_inline)) void _SCL_input()  { TWIDDR  &= ~(_BV(TWISCL)); }
+__attribute__((always_inline)) void _SCL_H()      { TWIPORT |=  (_BV(TWISCL)); }
+__attribute__((always_inline)) void _SCL_L()      { TWIPORT &= ~(_BV(TWISCL)); }
 
-inline void _wait_SDA()   { while(!(TWIPIN & _BV(TWISDA))); }
-inline void _wait_SCL()   { while(!(TWIPIN & _BV(TWISCL))); }
+__attribute__((always_inline)) void _wait_SDA()   { while(!(TWIPIN & _BV(TWISDA))); }
+__attribute__((always_inline)) void _wait_SCL()   { while(!(TWIPIN & _BV(TWISCL))); }
 
 uint8_t TWISoft::begin() {
   _ALL_input();
