@@ -3,6 +3,7 @@
 #include <avr/wdt.h>
 #include <avr/interrupt.h>
 
+#include <TWISoft.h>
 #include <TWISerial.h>
 #include <TWIEEPROM.h>
 
@@ -12,7 +13,7 @@
 const uint8_t EEPROM_DEVADDR = 0xA0;
 
 // TWISerial
-const uint8_t TWI_SERIAL_ADDR = 0x08;
+const uint8_t TWI_SERIAL_ADDR = 0x10;
 
 // Pins
 const uint8_t PIN_SDA   = 0;
@@ -73,8 +74,8 @@ void setup() {
   pinMode(PIN_ALARM, OUTPUT);
   pinMode(PIN_HRPWR, OUTPUT);
   
-  // Configure I2C
-  PIN_SDA
+  // Start I2C
+  TWISoft::begin();
 
   hr_warm();
 }

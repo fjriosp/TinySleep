@@ -1,4 +1,4 @@
-#include <TinyWireM.h>
+#include <TWISoft.h>
 #include "TWISerial.h"
 
 // Constants
@@ -20,7 +20,7 @@ TWI_SERIAL::TWI_SERIAL(uint8_t slaveAddr) {
 
 // Public Methods
 void TWI_SERIAL::begin() {
-  TinyWireM.begin();
+  TWISoft::begin();
 }
 
 size_t TWI_SERIAL::write(uint8_t data) {
@@ -44,52 +44,58 @@ void TWI_SERIAL::flush() {
     return;
   }
   
-  TinyWireM.beginTransmission(_slaveAddr);
-  TinyWireM.write(TWI_SERIAL_PRINT);
-  TinyWireM.write(_bufIdx);
+  TWISoft::start(_slaveAddr|TWI_WRITE);
+  TWISoft::write(TWI_SERIAL_PRINT);
+  TWISoft::write(_bufIdx);
   for(int i=0; i<_bufIdx; i++) {
-    TinyWireM.write(_buf[i]);
+    TWISoft::write(_buf[i]);
   }
-  TinyWireM.endTransmission();
+  TWISoft::stop();
   _bufIdx = 0;
 }
 
 uint8_t TWI_SERIAL::available() {
   if(!_enabled) return 0;
   
-  TinyWireM.beginTransmission(_slaveAddr);
-  TinyWireM.write(TWI_SERIAL_AVAILABLE);
-  _error = TinyWireM.endTransmission();
-  if(_error != 0) {
-    return 0;
-  }
+  _error = TWISoft::start(_slaveAddr|TWI_WRITE);
+  if(_error != 0) return 0;
+  
+  _error = TWISoft::write(TWI_SERIAL_AVAILABLE);
+  if(_error != 0) return 0;
+  
+  TWISoft::stop();
+  
   delay(5);
-  _error = TinyWireM.requestFrom(_slaveAddr,1);
-  if(_error != 0) {
-    return 0;
-  }
-  if(TinyWireM.available()) {
-    return TinyWireM.read();
-  }
-  return 0;
+  
+  _error = TWISoft::start(_slaveAddr|TWI_READ);
+  if(_error != 0) return 0;
+  
+  uint8_t a;
+  TWISoft::read(&a,true);
+  TWISoft::stop();
+  
+  return a;
 }
 
 uint8_t TWI_SERIAL::read() {
   if(!_enabled) return 0;
   
-  TinyWireM.beginTransmission(_slaveAddr);
-  TinyWireM.write(TWI_SERIAL_READ);
-  _error = TinyWireM.endTransmission();
-  if(_error != 0) {
-    return 0;
-  }
+  _error = TWISoft::start(_slaveAddr|TWI_WRITE);
+  if(_error != 0) return 0;
+  
+  _error = TWISoft::write(TWI_SERIAL_READ);
+  if(_error != 0) return 0;
+  
+  TWISoft::stop();
+  
   delay(5);
-  _error = TinyWireM.requestFrom(_slaveAddr,1);
-  if(_error != 0) {
-    return 0;
-  }
-  if(TinyWireM.available()) {
-    return TinyWireM.read();
-  }
-  return 0;
+  
+  _error = TWISoft::start(_slaveAddr|TWI_READ);
+  if(_error != 0) return 0;
+  
+  uint8_t c;
+  TWISoft::read(&c,true);
+  TWISoft::stop();
+  
+  return c;
 }
