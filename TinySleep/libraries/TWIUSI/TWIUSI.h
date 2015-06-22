@@ -63,10 +63,15 @@
 
 #include <Arduino.h>
 
-void    TWIUSI_begin(void);
-uint8_t TWIUSI_start(uint8_t addr);
-uint8_t TWIUSI_write(uint8_t byte);
-uint8_t TWIUSI_read(uint8_t *byte, bool last);
-uint8_t TWIUSI_stop(void);
+class TWI_USI {
+  public:
+    static void    begin(void);
+    static uint8_t start(uint8_t addr);
+    static uint8_t write(uint8_t byte);
+    static uint8_t read(uint8_t *byte, bool last);
+    static uint8_t stop(void);
+};
+
+extern TWI_USI TWIUSI;
 
 #endif
