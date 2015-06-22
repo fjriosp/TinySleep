@@ -3,6 +3,7 @@
 #include <avr/wdt.h>
 #include <avr/interrupt.h>
 
+#include <TWIUSI.h>
 #include <TWISerial.h>
 #include <TWIEEPROM.h>
 
@@ -12,7 +13,7 @@
 const uint8_t EEPROM_DEVADDR = 0xA0;
 
 // TWISerial
-const uint8_t TWI_SERIAL_ADDR = 0x08;
+const uint8_t TWI_SERIAL_ADDR = 0x10;
 
 // Pins
 const uint8_t PIN_SDA   = 0;
@@ -74,7 +75,8 @@ void setup() {
   pinMode(PIN_HRPWR, OUTPUT);
   
   // Configure I2C
-  PIN_SDA
+  TWISerial.begin();
+  TWIEEPROM.begin();
 
   hr_warm();
 }
@@ -93,10 +95,7 @@ ISR(WDT_vect) {
   sleeping++;
 }
 
-unsigned long cnt1=0;
-
 ISR(PCINT0_vect) {
-  cnt1++;
   if(digitalRead(PIN_HR))
     hr_beats++;
   digitalWrite(PIN_ALARM, digitalRead(PIN_HR));
@@ -134,8 +133,6 @@ void menu_loop() {
         power_test();
         break;
       default:
-        TWISerial.print(F("CNT1: "));
-        TWISerial.println(cnt1);
         TWISerial.print(F("Unknown command: "));
         TWISerial.println(cmd);
     }
@@ -371,21 +368,21 @@ unsigned long rmillis() {
   return real_millis;
 }
 
-void sleep(int nsec) {
+void sleep(uint8_t nsec) {
   // Prevent false wdt reset
   wdt_reset();
   // Configure the wdt
   wdt_interrupt_enable();
   
-  // Set sleeping flag
-  sleeping = 1;
+  // Initialize sleep count
+  sleeping = 0;
   
   // Set sleep to full power down.  Only external interrupts or 
   // the watchdog timer can wake the CPU!
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
   
   unsigned long t = millis();
-  while(sleeping <= nsec) {
+  while(sleeping < nsec) {
     // Enable sleep and enter sleep mode.
     sleep_mode();
     
