@@ -11,22 +11,6 @@ TWI_USI TWIUSI = TWI_USI();
 
 // Private
 __attribute__ ((noinline))
-void _TWIUSI_pasv_idle(void) {
-  DDR_USI  &= ~(1<<PIN_USI_SDA); // Enable SDA as input.
-  DDR_USI  &= ~(1<<PIN_USI_SCL); // Enable SCL as input.
-  PORT_USI |= (1<<PIN_USI_SDA);  // Release SDA.
-  PORT_USI |= (1<<PIN_USI_SCL);  // Release SCL.
-}
-
-__attribute__ ((always_inline))
-void _TWIUSI_act_idle(void) {
-  DDR_USI  |= (1<<PIN_USI_SDA);  // Enable SDA as output.
-  DDR_USI  |= (1<<PIN_USI_SCL);  // Enable SCL as output.
-  PORT_USI |= (1<<PIN_USI_SDA);  // Release SDA.
-  PORT_USI |= (1<<PIN_USI_SCL);  // Release SCL.
-}
-
-__attribute__ ((noinline))
 uint8_t _TWIUSI_transfer()
 {
   do
@@ -41,8 +25,6 @@ uint8_t _TWIUSI_transfer()
   _delay_us(T2_TWI);
   uint8_t data  = USIDR;                   // Read out data.
   USIDR = 0xFF;                            // Release SDA.
-
-  DDR_USI  |= (1<<PIN_USI_SDA);            // Enable SDA as output.
   
   return data;                             // Return the data from the USIDR
 }
@@ -50,21 +32,24 @@ uint8_t _TWIUSI_transfer()
 // Public
 __attribute__ ((noinline))
 void TWI_USI::begin(void) {
-  // Prepare bus passive IDLE
-  _TWIUSI_pasv_idle();
+  // Prepare bus
+  DDR_USI  |= (1<<PIN_USI_SDA);  // Enable SDA as output.
+  DDR_USI  |= (1<<PIN_USI_SCL);  // Enable SCL as output.
+  PORT_USI |= (1<<PIN_USI_SDA);  // Release SDA.
+  PORT_USI |= (1<<PIN_USI_SCL);  // Release SCL.
   
   USIDR = 0xFF;                                // Preload dataregister with "released level" data.
   USICR = (0<<USISIE)|(0<<USIOIE)|             // Disable Interrupts.
           (1<<USIWM1)|(0<<USIWM0)|             // Set USI in Two-wire mode.
           (1<<USICS1)|(0<<USICS0)|(1<<USICLK)| // Software stobe as counter clock source
           (0<<USITC);
-  USISR = USISR_8b;
+  USISR = USISR_8b;                            // Clear flags
 }
 
 __attribute__ ((noinline))
 uint8_t TWI_USI::start(uint8_t addr) {
-  // Prepare bus active IDLE
-  _TWIUSI_act_idle();
+  PORT_USI |= (1<<PIN_USI_SDA);            // Release SDA.
+  PORT_USI |= (1<<PIN_USI_SCL);            // Release SCL.
   while( !(PORT_USI & (1<<PIN_USI_SCL)) ); // Verify that SCL becomes high.
   _delay_us(T2_TWI);
 
@@ -92,7 +77,9 @@ uint8_t TWI_USI::write(uint8_t byte) {
   // Verify (N)ACK
   DDR_USI &= ~(1<<PIN_USI_SDA);    // Enable SDA as input.
   USISR = USISR_1b;
-  if( _TWIUSI_transfer() & 0x01 ) { // NACK
+  uint8_t ack = _TWIUSI_transfer();
+  DDR_USI |=  (1<<PIN_USI_SDA);    // Enable SDA as output.
+  if( ack & 0x01 ) { // NACK
     stop();
     return TWIUSI_NO_ACK;
   }
@@ -105,6 +92,7 @@ uint8_t TWI_USI::read(uint8_t *byte, bool last) {
   DDR_USI  &= ~(1<<PIN_USI_SDA); // Enable SDA as input.
   USISR = USISR_8b;              // Read 8 bits on bus.
   *byte = _TWIUSI_transfer();
+  DDR_USI |=  (1<<PIN_USI_SDA);  // Enable SDA as output.
   
   // Send (N)ACK
   if(last) USIDR = 0xFF;         // Load NACK to confirm End Of Transmission.
@@ -127,8 +115,8 @@ uint8_t TWI_USI::stop(void) {
   PORT_USI |= (1<<PIN_USI_SDA);            // Release SDA.
   _delay_us(T2_TWI);
   
-  // Go to passive IDLE
-  _TWIUSI_pasv_idle();
+  PORT_USI |= (1<<PIN_USI_SDA);            // Release SDA.
+  PORT_USI |= (1<<PIN_USI_SCL);            // Release SCL.
   
   if( !(USISR & (1<<USIPF)) ) {
     return TWIUSI_MISSING_STOP_CON;

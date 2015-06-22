@@ -16,9 +16,6 @@ const uint8_t EEPROM_DEVADDR = 0xA0;
 const uint8_t TWI_SERIAL_ADDR = 0x10;
 
 // Pins
-const uint8_t PIN_SDA   = 0;
-const uint8_t PIN_SCL   = 2;
-
 const uint8_t PIN_HR    = 1;
 const uint8_t PIN_ALARM = 3;
 const uint8_t PIN_HRPWR = 4;
