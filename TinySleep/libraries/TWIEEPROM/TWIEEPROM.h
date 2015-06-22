@@ -12,6 +12,7 @@ class TWI_EEPROM
     
   public:
     TWI_EEPROM(uint8_t devaddr);
+    void    begin(void);
     uint8_t write(unsigned int addr, uint8_t* buf, uint8_t len);
     uint8_t read (unsigned int addr, uint8_t* buf, uint8_t len);
     
