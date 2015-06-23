@@ -15,14 +15,14 @@ uint8_t _TWIUSI_transfer()
 {
   do
   { 
-    _delay_us(T2_TWI);
+    _delay_us(T_LOW);
     USICR |= (1<<USITC);                   // Generate positve SCL edge.
     while( !(PIN_USI & (1<<PIN_USI_SCL)) );// Wait for SCL to go high.
-    _delay_us(T4_TWI);
+    _delay_us(T_HIGH);
     USICR |= (1<<USITC);                   // Generate negative SCL edge.
   }while( !(USISR & (1<<USIOIF)) );        // Check for transfer complete.
   
-  _delay_us(T2_TWI);
+  _delay_us(T_LOW);
   uint8_t data  = USIDR;                   // Read out data.
   USIDR = 0xFF;                            // Release SDA.
   
@@ -51,11 +51,11 @@ uint8_t TWI_USI::start(uint8_t addr) {
   PORT_USI |= (1<<PIN_USI_SDA);            // Release SDA.
   PORT_USI |= (1<<PIN_USI_SCL);            // Release SCL.
   while( !(PORT_USI & (1<<PIN_USI_SCL)) ); // Verify that SCL becomes high.
-  _delay_us(T2_TWI);
+  _delay_us(T_BUF);
 
   /* Generate Start Condition */
   PORT_USI &= ~(1<<PIN_USI_SDA);           // Force SDA LOW.
-  _delay_us(T4_TWI);
+  _delay_us(T_HD_STA);
   PORT_USI &= ~(1<<PIN_USI_SCL);           // Pull SCL LOW.
 
   PORT_USI |= (1<<PIN_USI_SDA);            // Release SDA.
@@ -109,14 +109,10 @@ uint8_t TWI_USI::stop(void) {
   PORT_USI &= ~(1<<PIN_USI_SDA);           // Pull SDA low.
   PORT_USI |= (1<<PIN_USI_SCL);            // Release SCL.
   while( !(PIN_USI & (1<<PIN_USI_SCL)) );  // Wait for SCL to go high.
-  _delay_us(T4_TWI);
+  _delay_us(T_SU_STO);
   
   // Stop condition
   PORT_USI |= (1<<PIN_USI_SDA);            // Release SDA.
-  _delay_us(T2_TWI);
-  
-  PORT_USI |= (1<<PIN_USI_SDA);            // Release SDA.
-  PORT_USI |= (1<<PIN_USI_SCL);            // Release SCL.
   
   if( !(USISR & (1<<USIPF)) ) {
     return TWIUSI_MISSING_STOP_CON;
