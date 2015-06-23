@@ -2,24 +2,27 @@
 #define TWIUSI_h
 
 // Timing
+/*
 #if F_CPU <= 1000000L
 
 #define T_LOW    2 // 5 - (3 cycles)
 #define T_HIGH   1 // 4 - (3 cycles)
 #define T_BUF    2 // 5 - (3 cycles)
 #define T_HD_STA 3 // 4 - (1 cycle )
+#define T_HD_STO 3 // 4 - (1 cycle )
 #define T_SU_STO 1 // 4 - (3 cycles)
 
 #else
-
+*/
 #define T_LOW    5
 #define T_HIGH   4
 #define T_BUF    5
 #define T_HD_STA 4
+#define T_HD_STO 4
 #define T_SU_STO 4
-
+/*
 #endif
-
+*/
 // Errors
 #define TWIUSI_NO_ACK            0x01  // The slave did not acknowledge  the address
 #define TWIUSI_MISSING_START_CON 0x02  // Generated Start Condition not detected on bus

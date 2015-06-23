@@ -113,6 +113,7 @@ uint8_t TWI_USI::stop(void) {
   
   // Stop condition
   PORT_USI |= (1<<PIN_USI_SDA);            // Release SDA.
+  _delay_us(T_HD_STO);
   
   if( !(USISR & (1<<USIPF)) ) {
     return TWIUSI_MISSING_STOP_CON;
