@@ -22,9 +22,10 @@ uint8_t _TWIUSI_transfer()
     USICR |= (1<<USITC);                   // Generate negative SCL edge.
   }while( !(USISR & (1<<USIOIF)) );        // Check for transfer complete.
   
-  _delay_us(T_LOW);
   uint8_t data  = USIDR;                   // Read out data.
   USIDR = 0xFF;                            // Release SDA.
+  
+  _delay_us(T_LOW);
   
   return data;                             // Return the data from the USIDR
 }

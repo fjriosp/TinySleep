@@ -4,7 +4,7 @@
 // Timing
 #if F_CPU <= 1000000L
 
-#define T_LOW    2 // 5 - (3 cycles)
+#define T_LOW    1 // 5 - (4 cycles)
 #define T_HIGH   1 // 4 - (3 cycles)
 #define T_BUF    2 // 5 - (3 cycles)
 #define T_HD_STA 3 // 4 - (1 cycle )
