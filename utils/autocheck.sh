@@ -1,8 +1,5 @@
 #! /bin/bash
-
-while [ 1 ]
-do
-  ./checkRTC.py >> autocheck.log 2>> autocheck.err
-  sleep 1h
-done
-
+> checkRTC.log
+> checkRTC.err
+./adjustRTC.py
+sudo watch -p -n15 ./checkRTC.sh

@@ -5,7 +5,7 @@
 
 class _RTC {
   public:
-    volatile static uint32_t cnt;
+    volatile static uint32_t cc;
     volatile static uint8_t  ss;
     volatile static uint8_t  mi;
     volatile static uint8_t  hh;
@@ -14,6 +14,8 @@ class _RTC {
     volatile static uint8_t  yy;
     
     static void     begin(void);
+    static void     sync(void);
+    static uint16_t ff(void);
     static uint32_t millis(void);
 };
 

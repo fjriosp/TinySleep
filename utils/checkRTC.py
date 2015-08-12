@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 
 import serial
-import time
+from datetime import datetime
 import sys
 
 rtc_time  = None
@@ -11,12 +11,16 @@ ser = serial.Serial('/dev/ttyUSB0', 9600)
 ser.flushInput()
 ser.flushOutput()
 
+ser.write('p')
+ser.readline();
+
 while(rtc_time == None):
+  ser.write('p')
   rtc = ser.readline().rstrip()
-  real_time = time.time();
+  real_time = datetime.now();
   try:
-    rtc_time = time.mktime(time.strptime(rtc,"%Y-%m-%d %H:%M:%S"))
+    rtc_time = datetime.strptime(rtc,"%Y-%m-%d %H:%M:%S.%f")
   except ValueError:
     print >> sys.stderr, "Could not convert "+rtc+" as datetime."
 
-print time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(real_time)) + ' Offset: ' + str(rtc_time-real_time)
+print str(real_time) + ' Offset: ' + str((rtc_time-real_time).total_seconds())

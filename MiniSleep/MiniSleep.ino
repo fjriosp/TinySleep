@@ -3,7 +3,9 @@
 #include <EEPROM.h>
 #include <RTC.h>
 
-volatile uint8_t uart_usage = 0;
+const uint32_t    MAX_USART   = 60000;
+volatile uint8_t  using_usart = 0;
+volatile uint32_t last_usart  = 0;
 
 const uint8_t EE_OSCCAL = 0x00;
 
@@ -31,15 +33,11 @@ void setup() {
 
 void loop() {
   menu();
-  printRTC();
-  Serial.flush();
-  sleep();
-  if(uart_usage>0) {
-    uart_usage--;
-    if(uart_usage==0) {
-      PCMSK2 |= (1 << PCINT16);  // set PCINT16 to trigger an interrupt on PD0 (RXD) state change 
-    }
+  if(using_usart && (RTC.millis()-last_usart) > MAX_USART) {
+    using_usart = 0;
   }
+  sleep();
+  RTC.sync(); // Needed to refresh the async registers
 }
 
 void menu() {
@@ -108,15 +106,15 @@ void menu_set() {
 
 void printRTC() {
   char buf[32];
-  sprintf_P(buf,PSTR("%04d-%02d-%02d %02d:%02d:%02d"),2000+RTC.yy,RTC.mm,RTC.dd,RTC.hh,RTC.mi,RTC.ss);
+  sprintf_P(buf,PSTR("%04d-%02d-%02d %02d:%02d:%02d.%03d"),2000+RTC.yy,RTC.mm,RTC.dd,RTC.hh,RTC.mi,RTC.ss,RTC.ff());
   Serial.println(buf);
-  Serial.println(RTC.millis());
 }
 
 void sleep() {
-  if(uart_usage) {
+  if(using_usart) {
     set_sleep_mode (SLEEP_MODE_IDLE);
   } else {
+    Serial.flush();
     set_sleep_mode (SLEEP_MODE_PWR_SAVE);
   }
   
@@ -128,7 +126,7 @@ void sleep() {
 }
 
 ISR(PCINT2_vect) {
-  PCMSK2 &= ~(1 << PCINT16);  // Disable interrupt on PD0 (RXD) state change 
-  uart_usage = 60;
+  using_usart = 1;
+  last_usart  = RTC.millis();
 }
 

@@ -1,12 +1,12 @@
 #include "RTC.h"
 
-volatile uint32_t _RTC::cnt = 0;
-volatile uint8_t  _RTC::ss  = 0;
-volatile uint8_t  _RTC::mi  = 0;
-volatile uint8_t  _RTC::hh  = 0;
-volatile uint8_t  _RTC::dd  = 0;
-volatile uint8_t  _RTC::mm  = 0;
-volatile uint8_t  _RTC::yy  = 0;
+volatile uint32_t _RTC::cc = 0;
+volatile uint8_t  _RTC::ss = 0;
+volatile uint8_t  _RTC::mi = 0;
+volatile uint8_t  _RTC::hh = 0;
+volatile uint8_t  _RTC::dd = 1;
+volatile uint8_t  _RTC::mm = 1;
+volatile uint8_t  _RTC::yy = 0;
 
 void _RTC::begin(void) {
   // Configure Timer2
@@ -14,33 +14,66 @@ void _RTC::begin(void) {
   TIMSK2 = 0;           // Disable Timer2 interrupts
   ASSR   |= 1<<AS2;     // Timer2 async
   TCNT2  = 0;           // Reset Timer2
-  // 1/128 Prescaler
-  TCCR2A = 0;
-  TCCR2B = (1<<CS22)|(1<<CS20);
+  OCR2A  = 0x7F;        // COMPA used to adjust
+  // 1/32 Prescaler
+  // TIMER2_OVF every 32.768 kHz / 32 / 256 = 4 Hz = 250ms
+  TCCR2A = (1<WGM21)|(1<WGM20);
+  TCCR2B = (1<<CS21)|(1<<CS20);
   // Wait TC2 Updated
-  while(ASSR & ((1<<TCN2UB)|(1<<OCR2AUB)|(1<<OCR2BUB)|(1<<TCR2AUB)|(1<<TCR2BUB))); 
-  TIFR2  = (1<<TOV2);   // Clear interrupts flags
+  while(ASSR & ((1<<TCN2UB)|(1<<OCR2AUB)|(1<<TCR2AUB)|(1<<TCR2BUB))); 
+  TIFR2  = (1<<TOV2);   // Clear interrupt flag
   TIMSK2|= (1<<TOIE2);	// Enable Overflow Interrupt
+  TIFR2  = (1<<OCF2A);  // Clear interrupt flag
+  TIMSK2|= (1<<OCIE2A); // Enable COMPA Interrupt
   sei();                // Enable Interrupts
 }
 
+void _RTC::sync(void) {
+  OCR2B = 0x00;         //Dummy
+  while(ASSR & (1<<OCR2BUB));
+}
+
+uint16_t _RTC::ff(void) {
+  uint8_t c;
+  uint8_t t;
+  uint8_t oldSREG = SREG;
+  
+  cli();
+  c = cc;
+  t = TCNT2;
+  
+  if((TIFR2 & (1<<TOV2)) && (t < 255))
+    c++;
+
+  SREG = oldSREG;
+  
+  // c incremented every 250ms
+  // c = c % 4 => c < 1 sec
+  c &= 0x03;
+  
+  // c*250 + t*250/256
+  // c*250 + t*125/128
+  return (c*250) + (t*125)/128;
+}
+
 uint32_t _RTC::millis(void) {
-  uint32_t s;
+  uint32_t c;
   uint8_t  t;
   uint8_t oldSREG = SREG;
   
   cli();
-  s = cnt;
+  c = cc;
   t = TCNT2;
   
   if((TIFR2 & (1<<TOV2)) && (t < 255))
-    s++;
+    c++;
 
   SREG = oldSREG;
   
-  // sec * 1000 + t*1000/256
-  // sec * 1000 + t*125/32
-  return (s*1000) + (t*125)/32;
+  // c incremented every 250ms
+  // c*250 + t*250/256
+  // c*250 + t*125/128
+  return (c*250) + (t*125)/128;
 }
 
 ISR(TIMER2_OVF_vect) {
@@ -49,58 +82,86 @@ ISR(TIMER2_OVF_vect) {
   CLKPR = _BV(CLKPCE);
   CLKPR = 0; // 1/1 = 8MHz
   
-  // Runs every 32.768 kHz / 128 / 256 = 1 Hz
-  RTC.cnt++;
-  uint8_t _ss = RTC.ss+1;
-  if(_ss > 59) {
-    _ss = 0;
-    uint8_t _mi = RTC.mi+1;
-    if(_mi > 59) {
-      _mi = 0;
-      uint8_t _hh = RTC.hh+1;
-      if(_hh > 23) {
-        _hh = 0;
-        uint8_t _dd = RTC.dd + 1;
-        uint8_t _mm = RTC.mm;
-        uint8_t _yy = RTC.yy;
-        if(_dd > 31) {
-          _dd = 1;
-          _mm++;
-        } else if(_dd > 30) {
-          if((_mm==4) || (_mm==6) || (_mm==9) || (_mm==11)) {
-            _dd = 1;
-            _mm++;
-          }
-        } else if(_dd > 29) {
-          if(_mm == 2) {
-            _dd = 1;
-            _mm++;
-          }
-        } else if(_dd > 28) {
-          if(_mm == 2) {
-            // Leap years in range 2000 - 2255 are:
-            // yy!=2000 && yy%4==0
-            if(_yy==2000 || !(_yy%4)) {
-              _dd = 1;
-              _mm++;
-            }
-          }
-        }
-        if(_mm > 13) {
-          _mm = 1;
-          _yy++;
-        }
-        RTC.dd = _dd;
-        RTC.mm = _mm;
-        RTC.yy = _yy;
+  RTC.cc++;
+  if((RTC.cc & 0x03) == 0x00) {
+    uint8_t _ss = RTC.ss+1;
+    if(_ss > 59) {
+      _ss = 0;
+      uint8_t _mi = RTC.mi+1;
+      if(_mi > 59) {
+	_mi = 0;
+	uint8_t _hh = RTC.hh+1;
+	if(_hh > 23) {
+	  _hh = 0;
+	  uint8_t _dd = RTC.dd + 1;
+	  uint8_t _mm = RTC.mm;
+	  uint8_t _yy = RTC.yy;
+	  if(_dd > 31) {
+	    _dd = 1;
+	    _mm++;
+	  } else if(_dd > 30) {
+	    if((_mm==4) || (_mm==6) || (_mm==9) || (_mm==11)) {
+	      _dd = 1;
+	      _mm++;
+	    }
+	  } else if(_dd > 29) {
+	    if(_mm == 2) {
+	      _dd = 1;
+	      _mm++;
+	    }
+	  } else if(_dd > 28) {
+	    if(_mm == 2) {
+	      // Leap years in range 2000 - 2255 are:
+	      // yy!=2000 && yy%4==0
+	      if(_yy==2000 || !(_yy%4)) {
+		_dd = 1;
+		_mm++;
+	      }
+	    }
+	  }
+	  if(_mm > 13) {
+	    _mm = 1;
+	    _yy++;
+	  }
+	  RTC.dd = _dd;
+	  RTC.mm = _mm;
+	  RTC.yy = _yy;
+	}
+	RTC.hh = _hh;
       }
-      RTC.hh = _hh;
+      RTC.mi = _mi;
     }
-    RTC.mi = _mi;
+    RTC.ss = _ss;
   }
-  RTC.ss = _ss;
   
   // Restore previous speed
   CLKPR = _BV(CLKPCE);
   CLKPR = old_clk;
+}
+
+ISR(TIMER2_COMPA_vect) {
+  RTC.sync();
+  
+  Serial.print("A ");
+  Serial.print(RTC.ss);
+  Serial.print(" ");
+  Serial.print(OCR2A);
+  Serial.print(" ");
+  Serial.println(TCNT2);
+    
+  if(TCNT2 >= 0x7F) {
+    TIMSK2 &= ~(1<<OCIE2A);  // Disable COMPA Interrupt
+    
+    if(RTC.hh == 0) {
+      // Daily
+      TCNT2 += +7;
+    } else if(RTC.mm == 0) {
+      // Hourly
+      TCNT2 += -7;
+    } else {
+      // Minutely
+      TCNT2 += +3;
+    }
+    while(ASSR & (1<<TCN2UB));
+  }
 }
