@@ -96,12 +96,12 @@ parser.add_argument('-w','--wait'    , help='Interval to check [default: 30 min]
 args = parser.parse_args()
 
 if(args.reset):
-  setRTCTime(False)
   print "RTC reset"
+  setRTCTime(False)
 
 if(args.sync):
-  setRTCTime()
   print "RTC sync"
+  setRTCTime()
 
 if(args.printRTC):
   printRTCTime()
