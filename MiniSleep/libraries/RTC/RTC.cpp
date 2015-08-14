@@ -8,29 +8,42 @@ volatile uint8_t  _RTC::dd = 1;
 volatile uint8_t  _RTC::mm = 1;
 volatile uint8_t  _RTC::yy = 0;
 
+const uint8_t EV_MINUTE = 0;
+const uint8_t EV_HOUR   = 1;
+const uint8_t EV_DAY    = 2;
+uint8_t  _RTC::_event   = EV_MINUTE;
+
+uint8_t _RTC::am = +3;
+uint8_t _RTC::ah = -7;
+uint8_t _RTC::ad = +7;
+
 void _RTC::begin(void) {
   // Configure Timer2
   cli();                // Disable Interrupts
   TIMSK2 = 0;           // Disable Timer2 interrupts
   ASSR   |= 1<<AS2;     // Timer2 async
   TCNT2  = 0;           // Reset Timer2
-  OCR2A  = 0x7F;        // COMPA used to adjust
   // 1/32 Prescaler
   // TIMER2_OVF every 32.768 kHz / 32 / 256 = 4 Hz = 250ms
-  TCCR2A = (1<WGM21)|(1<WGM20);
+  TCCR2A = 0;
   TCCR2B = (1<<CS21)|(1<<CS20);
+  
   // Wait TC2 Updated
-  while(ASSR & ((1<<TCN2UB)|(1<<OCR2AUB)|(1<<TCR2AUB)|(1<<TCR2BUB))); 
+  while(ASSR & ((1<<TCN2UB)|(1<<TCR2AUB)|(1<<TCR2BUB))); 
+  
+  OCR2A  = 0x7F;        // COMPA used to adjust
+  // Wait OCR2A Updated
+  while(ASSR & (1<<OCR2AUB));
+  
   TIFR2  = (1<<TOV2);   // Clear interrupt flag
   TIMSK2|= (1<<TOIE2);	// Enable Overflow Interrupt
-  TIFR2  = (1<<OCF2A);  // Clear interrupt flag
-  TIMSK2|= (1<<OCIE2A); // Enable COMPA Interrupt
+  
   sei();                // Enable Interrupts
 }
 
 void _RTC::sync(void) {
-  OCR2B = 0x00;         //Dummy
-  while(ASSR & (1<<OCR2BUB));
+  TCCR2A = 0x00;         //Dummy
+  while(ASSR & (1<<TCR2AUB));
 }
 
 uint16_t _RTC::ff(void) {
@@ -88,12 +101,17 @@ ISR(TIMER2_OVF_vect) {
     if(_ss > 59) {
       _ss = 0;
       uint8_t _mi = RTC.mi+1;
+      RTC._event = EV_MINUTE;
+      TIFR2  = (1<<OCF2A);  // Clear interrupt flag
+      TIMSK2|= (1<<OCIE2A); // Enable COMPA Interrupt
       if(_mi > 59) {
 	_mi = 0;
 	uint8_t _hh = RTC.hh+1;
+	RTC._event = EV_HOUR;
 	if(_hh > 23) {
 	  _hh = 0;
 	  uint8_t _dd = RTC.dd + 1;
+	  RTC._event = EV_DAY;
 	  uint8_t _mm = RTC.mm;
 	  uint8_t _yy = RTC.yy;
 	  if(_dd > 31) {
@@ -142,26 +160,18 @@ ISR(TIMER2_OVF_vect) {
 ISR(TIMER2_COMPA_vect) {
   RTC.sync();
   
-  Serial.print("A ");
-  Serial.print(RTC.ss);
-  Serial.print(" ");
-  Serial.print(OCR2A);
-  Serial.print(" ");
-  Serial.println(TCNT2);
-    
-  if(TCNT2 >= 0x7F) {
-    TIMSK2 &= ~(1<<OCIE2A);  // Disable COMPA Interrupt
-    
-    if(RTC.hh == 0) {
-      // Daily
-      TCNT2 += +7;
-    } else if(RTC.mm == 0) {
-      // Hourly
-      TCNT2 += -7;
-    } else {
-      // Minutely
-      TCNT2 += +3;
-    }
-    while(ASSR & (1<<TCN2UB));
+  TIMSK2 &= ~(1<<OCIE2A);  // Disable COMPA Interrupt
+  
+  switch(RTC._event) {
+    case EV_DAY:
+      TCNT2 += RTC.ad;
+      break;
+    case EV_HOUR:
+      TCNT2 += RTC.ah;
+      break;
+    case EV_MINUTE:
+      TCNT2 += RTC.am;
+      break;
   }
+  while(ASSR & (1<<TCN2UB));
 }
