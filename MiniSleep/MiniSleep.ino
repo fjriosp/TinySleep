@@ -9,6 +9,9 @@ volatile uint32_t last_usart  = 0;
 
 const uint8_t EE_OSCCAL = 0x00;
 
+char cmdline[32];
+uint8_t cmdlen = 0;
+
 void setup() {
   OSCCAL = EEPROM.read(EE_OSCCAL);
   
@@ -42,22 +45,33 @@ void loop() {
 
 void menu() {
   while(Serial.available()>0) {
-    uint8_t c = Serial.read();
-    switch(c) {
-      case 'h':
-        menu_help();
-        break;
-      case 's':
-        while(Serial.available()<19);
-        menu_set();
-        break;
-      case 'p':
-        printRTC();
-        break;
-      default:
-        Serial.print(F("Unknown command: "));
-        Serial.println(c);
-        break;
+    // Read while available or end of command
+    char c = Serial.read();
+    while(Serial.available()>0 && c!='\r') {
+      cmdline[cmdlen] = c;
+      cmdlen++;
+      cmdlen %= 32;
+      c = Serial.read();
+    }
+
+    // If end of command
+    if(c == '\r') {
+      cmdline[cmdlen] = '\0';
+      switch(cmdline[0]) {
+        case 'h':
+          menu_help();
+          break;
+        case 's':
+          menu_set();
+          break;
+        case 'p':
+          printRTC();
+          break;
+        default:
+          Serial.print(F("Unknown command: "));
+          Serial.println(c);
+          break;
+      }
     }
   }
 }
@@ -71,37 +85,10 @@ void menu_help() {
   Serial.println(F("   p - Print the rtc time."));
 }
 
-uint16_t readN4() {
-  uint16_t n;
-  n = Serial.read()-'0';
-  n = n*10 + Serial.read()-'0';
-  n = n*10 + Serial.read()-'0';
-  n = n*10 + Serial.read()-'0';
-  return n;
-}
-
-uint8_t readN2() {
-  uint16_t n;
-  n = Serial.read()-'0';
-  n = n*10 + Serial.read()-'0';
-  return n;
-}
-
 void menu_set() {
   uint16_t tmp16;
-  uint8_t  tmp8;
-  
-  RTC.yy = readN4()-2000;
-  Serial.read(); // Ignore '-'
-  RTC.mm = readN2();
-  Serial.read(); // Ignore '-'
-  RTC.dd = readN2();
-  Serial.read(); // Ignore ' '
-  RTC.hh = readN2();
-  Serial.read(); // Ignore ':'
-  RTC.mi = readN2();
-  Serial.read(); // Ignore ':'
-  RTC.ss = readN2();
+  sscanf_P(cmdline+1,F("%d-%d-%d %d:%d:%d"),&tmp16,&RTC.mm,&RTC.dd,&RTC.hh,&RTC.mi,&RTC.ss);
+  RTC.yy = tmp16 - 2000;
 }
 
 void printRTC() {

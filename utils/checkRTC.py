@@ -53,7 +53,7 @@ def formatTime(t):
   return datetime.fromtimestamp(t).strftime("%Y-%m-%d %H:%M:%S.%f")
 
 def printAdjust(t,o,ft,fo):
-  d  = (o-fo)/(t-ft)  # d/sec
+  d  = (fo-o)/(t-ft)  # d/sec
   d *= 60             # d/min
   tt = d/(0.250/256)  # t/min
   am = round(tt)
@@ -85,6 +85,7 @@ if(args.sync):
 
 if(args.check):
   print "Starting RTC check"
+  time.sleep(10)
   (ft,fo) = checkTime()
   print "%s O:% 12.6f" % (formatTime(ft),fo)
 
