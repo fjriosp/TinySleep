@@ -9,19 +9,26 @@ import sys
 dt2000 = datetime(2000,1,1,0,0,0,0)
 t2000  = time.mktime(dt2000.timetuple())
 
-def setRTCTime(current=True):
+def wakeUp():
   ser = serial.Serial('/dev/ttyUSB0', 9600)
-  ser.flushInput()
-  ser.flushOutput()
 
-  ser.write(' ')
-  time.sleep(1)
-  ser.readline();
+  ser.write('\r')
+  ser.flushOutput()
+  time.sleep(.5)
+  ser.write('\r')
+  ser.flushOutput()
+  time.sleep(.5)
+  ser.flushInput()
+
+  return ser
+
+def setRTCTime(current=True):
+  ser = wakeUp()
 
   if(current):
-    ser.write('s'+time.strftime("%Y-%m-%d %H:%M:%S",time.localtime()))
+    ser.write('s'+time.strftime("%Y-%m-%d %H:%M:%S",time.localtime())+'\r')
   else:
-    ser.write('s2000-01-01 00:00:00')
+    ser.write('s2000-01-01 00:00:00\r')
 
   ser.close()
 
@@ -29,15 +36,10 @@ def checkTime():
   rtc_time  = None
   real_time = None
 
-  ser = serial.Serial('/dev/ttyUSB0', 9600)
-  ser.flushInput()
-  ser.flushOutput()
-
-  ser.write(' ')
-  ser.readline();
+  ser = wakeUp()
 
   while(rtc_time == None):
-    ser.write('p')
+    ser.write('p\r')
     rtc = ser.readline().rstrip()
     real_time = time.time();
     try:
@@ -48,6 +50,22 @@ def checkTime():
   
   ser.close();
   return (real_time,rtc_time-real_time)
+
+def printRTCTime():
+  rtc = None
+
+  ser = wakeUp()
+  ser.write('p\r')
+  print ser.readline().rstrip()
+  ser.close();
+
+def printRTCAdjust():
+  rtc = None
+
+  ser = wakeUp()
+  ser.write('a\r')
+  print ser.readline().rstrip()
+  ser.close();
 
 def formatTime(t):
   return datetime.fromtimestamp(t).strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -69,10 +87,12 @@ def printAdjust(t,o,ft,fo):
 # main #
 ########
 parser = argparse.ArgumentParser(description='Checks the RTC precision.')
-parser.add_argument('-r','--reset', help='Clears the RTC clock',action="store_true")
-parser.add_argument('-s','--sync',  help='Synchronizes the RTC Clock with the system clock',action="store_true")
-parser.add_argument('-c','--check', help='Checks the RTC precision',action="store_true")
-parser.add_argument('-w','--wait',  help='Interval to check [default: 30 min]',default=30*60, type=int)
+parser.add_argument('-a','--printAdj', help='Show the RTC adjust',action="store_true")
+parser.add_argument('-p','--printRTC', help='Show the RTC clock',action="store_true")
+parser.add_argument('-r','--reset'   , help='Clears the RTC clock',action="store_true")
+parser.add_argument('-s','--sync'    , help='Synchronizes the RTC Clock with the system clock',action="store_true")
+parser.add_argument('-c','--check'   , help='Checks the RTC precision',action="store_true")
+parser.add_argument('-w','--wait'    , help='Interval to check [default: 30 min]',default=30*60, type=int)
 args = parser.parse_args()
 
 if(args.reset):
@@ -82,6 +102,12 @@ if(args.reset):
 if(args.sync):
   setRTCTime()
   print "RTC sync"
+
+if(args.printRTC):
+  printRTCTime()
+
+if(args.printAdj):
+  printRTCAdjust()
 
 if(args.check):
   print "Starting RTC check"

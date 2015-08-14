@@ -13,13 +13,14 @@ class _RTC {
     volatile static uint8_t  mm;
     volatile static uint8_t  yy;
     static uint8_t _event;
-    static uint8_t am;
-    static uint8_t ah;
-    static uint8_t ad;
+    static int8_t am;
+    static int8_t ah;
+    static int8_t ad;
     
     static void     begin(void);
     static void     sync(void);
     static uint16_t ff(void);
+    static void     setTime(uint16_t,uint8_t,uint8_t,uint8_t,uint8_t,uint8_t,uint16_t);
     static uint32_t millis(void);
 };
 

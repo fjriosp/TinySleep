@@ -46,13 +46,13 @@ void loop() {
 void menu() {
   while(Serial.available()>0) {
     // Read while available or end of command
-    char c = Serial.read();
-    while(Serial.available()>0 && c!='\r') {
+    char c;
+   do {
+      c = Serial.read();
       cmdline[cmdlen] = c;
       cmdlen++;
       cmdlen %= 32;
-      c = Serial.read();
-    }
+    } while(Serial.available()>0 && c!='\r');
 
     // If end of command
     if(c == '\r') {
@@ -62,16 +62,23 @@ void menu() {
           menu_help();
           break;
         case 's':
-          menu_set();
+          menu_set_rtc();
           break;
         case 'p':
-          printRTC();
+          menu_print_rtc();
+          break;
+        case 'a':
+          menu_print_adjust();
+          break;
+        case 'A':
+          menu_set_adjust();
           break;
         default:
           Serial.print(F("Unknown command: "));
           Serial.println(c);
           break;
       }
+      cmdlen = 0;
     }
   }
 }
@@ -83,18 +90,31 @@ void menu_help() {
   Serial.println(F("   h - Show this help."));
   Serial.println(F("   s - Set the rtc time."));
   Serial.println(F("   p - Print the rtc time."));
+  Serial.println(F("   a - Print the rtc adjust."));
+  Serial.println(F("   A - Set the rtc adjust."));
 }
 
-void menu_set() {
-  uint16_t tmp16;
-  sscanf_P(cmdline+1,F("%d-%d-%d %d:%d:%d"),&tmp16,&RTC.mm,&RTC.dd,&RTC.hh,&RTC.mi,&RTC.ss);
-  RTC.yy = tmp16 - 2000;
+void menu_set_rtc() {
+  uint16_t yy,ff;
+  uint8_t  mm,dd,hh,mi,ss;
+  sscanf_P(cmdline+1,PSTR("%hu-%hhu-%hhu %hhu:%hhu:%hhu.%hu"),&yy,&mm,&dd,&hh,&mi,&ss,&ff);
+  RTC.setTime(yy,mm,dd,hh,mi,ss,ff);
 }
 
-void printRTC() {
+void menu_print_rtc() {
   char buf[32];
-  sprintf_P(buf,PSTR("%04d-%02d-%02d %02d:%02d:%02d.%03d"),2000+RTC.yy,RTC.mm,RTC.dd,RTC.hh,RTC.mi,RTC.ss,RTC.ff());
+  sprintf_P(buf,PSTR("%04hd-%02hhd-%02hhd %02hhd:%02hhd:%02hhd.%03hd"),2000+RTC.yy,RTC.mm,RTC.dd,RTC.hh,RTC.mi,RTC.ss,RTC.ff());
   Serial.println(buf);
+}
+
+void menu_print_adjust() {
+  char buf[16];
+  sprintf_P(buf,PSTR("A%hhd,%hhd,%hhd"),RTC.am,RTC.ah,RTC.ad);
+  Serial.println(buf);
+}
+
+void menu_set_adjust() {
+  sscanf_P(cmdline+1,PSTR("%hhd,%hhd,%hhd"),&RTC.am,&RTC.ah,&RTC.ad);
 }
 
 void sleep() {

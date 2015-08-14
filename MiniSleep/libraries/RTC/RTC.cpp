@@ -13,9 +13,9 @@ const uint8_t EV_HOUR   = 1;
 const uint8_t EV_DAY    = 2;
 uint8_t  _RTC::_event   = EV_MINUTE;
 
-uint8_t _RTC::am = +3;
-uint8_t _RTC::ah = -7;
-uint8_t _RTC::ad = +7;
+int8_t _RTC::am = 0;
+int8_t _RTC::ah = 0;
+int8_t _RTC::ad = 0;
 
 void _RTC::begin(void) {
   // Configure Timer2
@@ -67,6 +67,30 @@ uint16_t _RTC::ff(void) {
   // c*250 + t*250/256
   // c*250 + t*125/128
   return (c*250) + (t*125)/128;
+}
+
+void _RTC::setTime(uint16_t pyy, uint8_t pmm, uint8_t pdd, 
+		   uint8_t phh, uint8_t pmi, uint8_t pss, 
+		   uint16_t pff) {
+  uint8_t oldSREG = SREG;
+  
+  if(pyy >= 2000)
+    pyy -= 2000;
+  
+  cli();
+  yy    = pyy;
+  mm    = pmm;
+  dd    = pdd;
+  hh    = phh;
+  mi    = pmi;
+  ss    = pss;
+  cc   &= ~0x03;
+  cc   += pff / 256;
+  TCNT2 = pff % 256;
+  
+  while(ASSR & (1<<TCN2UB));
+
+  SREG = oldSREG;
 }
 
 uint32_t _RTC::millis(void) {
