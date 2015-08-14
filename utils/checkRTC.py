@@ -26,9 +26,9 @@ def setRTCTime(current=True):
   ser = wakeUp()
 
   if(current):
-    ser.write('s'+time.strftime("%Y-%m-%d %H:%M:%S",time.localtime())+'\r')
+    ser.write('s'+datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]+'\r')
   else:
-    ser.write('s2000-01-01 00:00:00\r')
+    ser.write('s2000-01-01 00:00:00.000\r')
 
   ser.close()
 
@@ -98,16 +98,20 @@ args = parser.parse_args()
 if(args.reset):
   print "RTC reset"
   setRTCTime(False)
+  sys.stdout.flush()
 
 if(args.sync):
   print "RTC sync"
   setRTCTime()
+  sys.stdout.flush()
 
 if(args.printRTC):
   printRTCTime()
+  sys.stdout.flush()
 
 if(args.printAdj):
   printRTCAdjust()
+  sys.stdout.flush()
 
 if(args.check):
   print "Starting RTC check"
