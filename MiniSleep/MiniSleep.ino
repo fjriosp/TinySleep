@@ -3,25 +3,41 @@
 #include <EEPROM.h>
 #include <RTC.h>
 
+// Low Power
 const uint32_t    MAX_USART   = 60000;
 volatile uint8_t  using_usart = 0;
 volatile uint32_t last_usart  = 0;
 
+// EEPROM
 const uint8_t EE_OSCCAL = 0x00;
 
+// Menu
 char cmdline[32];
 uint8_t cmdlen = 0;
+
+// Mem
+extern uint8_t __data_start;
+extern uint8_t __data_end;
+extern uint8_t __bss_start;
+extern uint8_t __bss_end;
+extern uint8_t __heap_start;
+extern uint8_t *__brkval;
+
+const uint8_t STACK_CANARY=0xAA;
 
 void setup() {
   OSCCAL = EEPROM.read(EE_OSCCAL);
   
   pinMode(13,OUTPUT);
   
-  ADCSRA = 0;             // disable ADC
-  power_all_disable ();   // Turn off modules
-  power_timer2_enable (); // Turn on timer2
-  power_twi_enable ();    // Turn on TWI
-  power_usart0_enable (); // Turn on Serial
+  ADCSRA = 0;            // disable ADC
+  power_adc_disable();   // Turn off ADC
+  power_spi_disable();   // Turn off SPI
+  power_timer0_disable();// Turn off timer0
+  power_timer1_disable();// Turn off timer0
+  power_timer2_enable(); // Turn on timer2
+  power_twi_enable();    // Turn on TWI
+  power_usart0_enable(); // Turn on Serial
   
   RTC.begin();
   
@@ -43,6 +59,59 @@ void loop() {
   RTC.sync(); // Needed to refresh the async registers
 }
 
+//#################
+//# Internal Temp #
+//#################
+uint8_t getTemp() {
+  power_adc_enable();   // Turn on ADC
+  ADCSRA |= _BV(ADEN);  // Enable the ADC
+  
+  // Set the internal reference and mux.
+  ADMUX   = (_BV(REFS1) | _BV(REFS0) | _BV(MUX3));
+  
+  // Discard the first read
+  rawAnalogReadWithSleep();
+  uint16_t r = rawAnalogReadWithSleep();
+  
+  ADMUX  = 0;           // Disable internal ref
+  ADCSRA = 0;           // Disable ADC
+  power_adc_disable();  // Turn off ADC
+  
+  return r - 324;
+}
+
+uint16_t rawAnalogReadWithSleep() {
+  ADCSRA |= 1<<ADIF; // Clear interrupt flag
+  ADCSRA |= 1<<ADIE; // Enable ADC interrupt
+
+  // Enable Noise Reduction Sleep Mode
+  set_sleep_mode( SLEEP_MODE_ADC );
+  sleep_enable();
+
+  // Loop until the conversion is finished
+  do {
+    sei();          // Ensure interrupts are enabled before sleeping
+    sleep_cpu();
+    cli();          // Disable interrupts so the while below is performed without interruption
+  // Conversion finished?  If not, loop.
+  } while(ADCSRA & (1<<ADSC));
+
+  
+  sleep_disable();  // No more sleeping
+  sei();            // Enable interrupts
+
+  ADCSRA &= ~(1<<ADIE); // Disable ADC interrupt
+  
+  return ADCW;
+}
+
+ISR(ADC_vect) {
+  // Ignore
+}
+
+//###############
+//# Serial Menu #
+//###############
 void menu() {
   while(Serial.available()>0) {
     // Read while available or end of command
@@ -73,6 +142,9 @@ void menu() {
         case 'A':
           menu_set_adjust();
           break;
+        case 'm':
+          menu_mem_stats();
+          break;
         default:
           Serial.print(F("Unknown command: "));
           Serial.println(c);
@@ -92,6 +164,7 @@ void menu_help() {
   Serial.println(F("   p - Print the rtc time."));
   Serial.println(F("   a - Print the rtc adjust."));
   Serial.println(F("   A - Set the rtc adjust."));
+  Serial.println(F("   m - Show mem stats."));
 }
 
 void menu_set_rtc() {
@@ -117,6 +190,32 @@ void menu_set_adjust() {
   sscanf_P(cmdline+1,PSTR("%hhd,%hhd,%hhd"),&RTC.am,&RTC.ah,&RTC.ad);
 }
 
+void menu_mem_stats() {
+  uint16_t total_size = RAMEND-((uint16_t)&__data_start)+1;
+  uint16_t data_size  = ((uint16_t)&__data_end)-((uint16_t)&__data_start);
+  uint16_t bss_size   = ((uint16_t)&__bss_end)-((uint16_t)&__bss_start);
+  uint16_t heap_size  = ((uint16_t)__brkval) == 0 ? 0 : (((uint16_t)__brkval)-((uint16_t)&__heap_start));
+  uint16_t stack_size = RAMEND-SP;
+  uint16_t total_used = data_size+bss_size+heap_size+stack_size;
+  Serial.print(F("Total:  "));
+  Serial.println(total_size);
+  Serial.print(F("Data:   "));
+  Serial.println(data_size);
+  Serial.print(F("BSS:    "));
+  Serial.println(bss_size);
+  Serial.print(F("Heap:   "));
+  Serial.println(heap_size);
+  Serial.print(F("Stack:  "));
+  Serial.println(stack_size);
+  Serial.print(F("Free:   "));
+  Serial.println(RAMEND-total_used);
+  Serial.print(F("Unused: "));
+  Serial.println(mem_unused());
+}
+
+//#############
+//# Low Power #
+//#############
 void sleep() {
   if(using_usart) {
     set_sleep_mode (SLEEP_MODE_IDLE);
@@ -137,3 +236,34 @@ ISR(PCINT2_vect) {
   last_usart  = RTC.millis();
 }
 
+//#############
+//# Mem Trace #
+//#############
+__attribute__ ((naked,section (".init1")))
+void mem_paint(void) {
+  uint8_t *p = __brkval==0 ? &__heap_start : __brkval;
+
+  while((uint16_t)p <= SP)
+  {
+      *p = STACK_CANARY;
+      p++;
+  }
+}
+
+uint16_t mem_unused() {
+  uint8_t *p = __brkval==0 ? &__heap_start : __brkval;
+
+  uint16_t c = 0;
+  uint16_t maxc = 0;
+  // Search max contiguous bytes with value STACK_CANARY
+  while(p <= (uint8_t*)SP) {
+    if(*p == STACK_CANARY) {
+      c++;
+    } else if(c > maxc) {
+      maxc = c;
+    }
+    p++;
+  }
+
+  return maxc;
+}
