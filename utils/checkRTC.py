@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 
+import os
 import argparse
 import serial
 import time
@@ -14,10 +15,10 @@ def wakeUp():
 
   ser.write('\r')
   ser.flushOutput()
-  time.sleep(.5)
+  time.sleep(1)
   ser.write('\r')
   ser.flushOutput()
-  time.sleep(.5)
+  time.sleep(1)
   ser.flushInput()
 
   return ser
@@ -49,7 +50,13 @@ def checkTime():
       print >> sys.stderr, "Could not convert "+rtc+" as datetime."
   
   ser.close();
-  return (real_time,rtc_time-real_time)
+
+  res = dict()
+  res['time']   = real_time
+  res['rtc']    = rtc_time
+  res['rtc_str']= rtc
+  res['offset'] = rtc_time-real_time
+  return res
 
 def printRTCTime():
   rtc = None
@@ -70,7 +77,13 @@ def printRTCAdjust():
 def formatTime(t):
   return datetime.fromtimestamp(t).strftime("%Y-%m-%d %H:%M:%S.%f")
 
-def printAdjust(t,o,ft,fo):
+def printAdjust(r,s):
+  fo = s['offset']
+  ft = s['time']
+  o  = r['offset']
+  t  = r['time']
+  rtc= r['rtc']
+
   d  = (fo-o)/(t-ft)  # d/sec
   d *= 60             # d/min
   tt = d/(0.250/256)  # t/min
@@ -81,7 +94,18 @@ def printAdjust(t,o,ft,fo):
   ad = round(tt)
   tt = (tt-ad)        # e/day
 
-  print "%s T:%s O:% 12.6f A: %+04d %+04d %+04d" % (formatTime(t),formatTime(t2000+t-ft),o-fo,am,ah,ad)
+  print "%s T:%s R:%s O:% 12.6f A: %+04d %+04d %+04d" % (formatTime(t),formatTime(rtc),formatTime(t2000+t-ft),o-fo,am,ah,ad)
+
+def loadSession(fn):
+  f = open(fn, 'r')
+  s = eval(f.read())
+  f.close()
+  return s
+
+def saveSession(fn, s):
+  f = open(fn, 'w')
+  f.write(str(s))
+  f.close()
 
 ########
 # main #
@@ -90,6 +114,7 @@ parser = argparse.ArgumentParser(description='Checks the RTC precision.')
 parser.add_argument('-a','--printAdj', help='Show the RTC adjust',action="store_true")
 parser.add_argument('-p','--printRTC', help='Show the RTC clock',action="store_true")
 parser.add_argument('-r','--reset'   , help='Clears the RTC clock',action="store_true")
+parser.add_argument('-S','--session' , help='Session file',default=None)
 parser.add_argument('-s','--sync'    , help='Synchronizes the RTC Clock with the system clock',action="store_true")
 parser.add_argument('-c','--check'   , help='Checks the RTC precision',action="store_true")
 parser.add_argument('-w','--wait'    , help='Interval to check [default: 30 min]',default=30*60, type=int)
@@ -113,15 +138,30 @@ if(args.printAdj):
   printRTCAdjust()
   sys.stdout.flush()
 
+session = None
+
+if(args.session != None):
+  if(args.reset or args.sync or not os.path.isfile(args.session)):
+    print "Saving RTC session"
+    session = checkTime()
+    saveSession(args.session,session)
+  else:
+    print "Loading RTC session"
+    session = loadSession(args.session)
+
+if(session == None):
+  print "No session found"
+  session = checkTime()
+
 if(args.check):
   print "Starting RTC check"
-  time.sleep(10)
-  (ft,fo) = checkTime()
+  ft = session['time']
+  fo = session['offset']
   print "%s O:% 12.6f" % (formatTime(ft),fo)
 
   while True:
+    tmp = checkTime()
+    printAdjust(tmp,session)
     sys.stdout.flush()
     time.sleep(args.wait)
-    (t,o) = checkTime()
-    printAdjust(t,o,ft,fo)
 
