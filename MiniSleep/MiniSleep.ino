@@ -4,12 +4,17 @@
 #include <RTC.h>
 
 // Low Power
-const uint32_t    MAX_USART   = 60000;
+const uint32_t    MAX_USART   = 10*1000;
 volatile uint8_t  using_usart = 0;
-volatile uint32_t last_usart  = 0;
+volatile uint32_t usart_ttl  = 0;
 
 // EEPROM
 const uint8_t EE_OSCCAL = 0x00;
+
+// Temp
+const uint32_t TEMP_TIME = 30*60*1000;
+uint32_t temp_next   = 0;
+uint16_t temp        = 0;
 
 // Menu
 char cmdline[32];
@@ -31,10 +36,7 @@ void setup() {
   pinMode(13,OUTPUT);
   
   ADCSRA = 0;            // disable ADC
-  power_adc_disable();   // Turn off ADC
-  power_spi_disable();   // Turn off SPI
-  power_timer0_disable();// Turn off timer0
-  power_timer1_disable();// Turn off timer0
+  power_all_disable();   // Turn off all modules
   power_timer2_enable(); // Turn on timer2
   power_twi_enable();    // Turn on TWI
   power_usart0_enable(); // Turn on Serial
@@ -51,10 +53,8 @@ void setup() {
 } 
 
 void loop() {
-  menu();
-  if(using_usart && (RTC.millis()-last_usart) > MAX_USART) {
-    using_usart = 0;
-  }
+  temp_loop();
+  menu_loop();
   sleep();
   RTC.sync(); // Needed to refresh the async registers
 }
@@ -62,34 +62,40 @@ void loop() {
 //#################
 //# Internal Temp #
 //#################
-uint8_t getTemp() {
-  power_adc_enable();   // Turn on ADC
-  ADCSRA |= _BV(ADEN);  // Enable the ADC
+void temp_loop() {
+  if(RTC.millis() >= temp_next) {
+    power_adc_enable();   // Turn on ADC
+    // Enable the ADC with 8MHz/128=62.5kHz
+    ADCSRA = _BV(ADEN) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
+    // Set the internal reference and mux.
+    ADMUX   = (_BV(REFS1) | _BV(REFS0) | _BV(MUX3));
+    
+    _delay_ms(1);
+    
+    // Discard the first read
+    rawAnalogReadWithSleep();
+    temp = rawAnalogReadWithSleep();
   
-  // Set the internal reference and mux.
-  ADMUX   = (_BV(REFS1) | _BV(REFS0) | _BV(MUX3));
-  
-  // Discard the first read
-  rawAnalogReadWithSleep();
-  uint16_t r = rawAnalogReadWithSleep();
-  
-  ADMUX  = 0;           // Disable internal ref
-  ADCSRA = 0;           // Disable ADC
-  power_adc_disable();  // Turn off ADC
-  
-  return r - 324;
+    ADMUX  = 0;           // Disable internal ref
+    ADCSRA = 0;           // Disable ADC
+    power_adc_disable();  // Turn off ADC
+    
+    temp_next = RTC.millis() + TEMP_TIME;
+  }
 }
 
 uint16_t rawAnalogReadWithSleep() {
   ADCSRA |= 1<<ADIF; // Clear interrupt flag
   ADCSRA |= 1<<ADIE; // Enable ADC interrupt
+  ADCSRA |= 1<<ADSC; // Start conversion
 
-  // Enable Noise Reduction Sleep Mode
-  set_sleep_mode( SLEEP_MODE_ADC );
+  // Sleep while conversion
+  set_sleep_mode( SLEEP_MODE_IDLE );
   sleep_enable();
 
   // Loop until the conversion is finished
   do {
+    RTC.sync();
     sei();          // Ensure interrupts are enabled before sleeping
     sleep_cpu();
     cli();          // Disable interrupts so the while below is performed without interruption
@@ -112,11 +118,12 @@ ISR(ADC_vect) {
 //###############
 //# Serial Menu #
 //###############
-void menu() {
+void menu_loop() {
   while(Serial.available()>0) {
+    usart_ttl = RTC.millis() + MAX_USART;
     // Read while available or end of command
     char c;
-   do {
+    do {
       c = Serial.read();
       cmdline[cmdlen] = c;
       cmdlen++;
@@ -145,6 +152,9 @@ void menu() {
         case 'm':
           menu_mem_stats();
           break;
+        case 't':
+          menu_print_temp();
+          break;
         default:
           Serial.print(F("Unknown command: "));
           Serial.println(c);
@@ -152,6 +162,14 @@ void menu() {
       }
       cmdlen = 0;
     }
+  }
+  if(using_usart && (RTC.millis() > usart_ttl)) {
+    using_usart = 0;
+    // Interrupt on PD0 (RXD)
+    cli();
+    PCICR  |= (1 << PCIE2);    // set PCIE2 to enable PCMSK2 scan
+    PCMSK2 |= (1 << PCINT16);  // set PCINT16 to trigger an interrupt on state change 
+    sei();
   }
 }
 
@@ -165,6 +183,7 @@ void menu_help() {
   Serial.println(F("   a - Print the rtc adjust."));
   Serial.println(F("   A - Set the rtc adjust."));
   Serial.println(F("   m - Show mem stats."));
+  Serial.println(F("   t - Show temperature."));
 }
 
 void menu_set_rtc() {
@@ -213,6 +232,11 @@ void menu_mem_stats() {
   Serial.println(mem_unused());
 }
 
+void menu_print_temp() {
+  temp_next=0;
+  Serial.println(temp);
+}
+
 //#############
 //# Low Power #
 //#############
@@ -233,7 +257,10 @@ void sleep() {
 
 ISR(PCINT2_vect) {
   using_usart = 1;
-  last_usart  = RTC.millis();
+  RTC.sync();
+  usart_ttl = RTC.millis() + MAX_USART;
+  PCMSK2 &= ~(1 << PCINT16);  // disable PCINT16 to trigger an interrupt on state change 
+  PCICR  &= ~(1 << PCIE2);    // disable PCIE2 to ignore PCMSK2 scan
 }
 
 //#############
