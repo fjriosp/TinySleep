@@ -6,20 +6,18 @@ import serial
 import time
 from datetime import datetime
 import sys
+import Adafruit_DHT
 
 dt2000 = datetime(2000,1,1,0,0,0,0)
 t2000  = time.mktime(dt2000.timetuple())
 
 def wakeUp():
-  ser = serial.Serial('/dev/ttyUSB0', 9600)
+  ser = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)
 
-  ser.write('\r')
-  ser.flushOutput()
-  time.sleep(1)
-  ser.write('\r')
-  ser.flushOutput()
-  time.sleep(1)
-  ser.flushInput()
+  response = None
+  while(not response):
+    ser.write('\r')
+    response = ser.readline();
 
   return ser
 
@@ -48,14 +46,21 @@ def checkTime():
       rtc_time = time.mktime(t.timetuple()) + t.microsecond / 1E6
     except ValueError:
       print >> sys.stderr, "Could not convert "+rtc+" as datetime."
+
+  ser.write('t\r')
+  rtc_temp = int(ser.readline().rstrip())
+  hum, temp = Adafruit_DHT.read_retry(Adafruit_DHT.AM2302, 4)
   
   ser.close();
 
   res = dict()
-  res['time']   = real_time
-  res['rtc']    = rtc_time
-  res['rtc_str']= rtc
-  res['offset'] = rtc_time-real_time
+  res['time']     = real_time
+  res['rtc']      = rtc_time
+  res['rtc_str']  = rtc
+  res['offset']   = rtc_time-real_time
+  res['hum']      = hum
+  res['temp']     = temp
+  res['rtc_temp'] = rtc_temp
   return res
 
 def printRTCTime():
@@ -78,11 +83,13 @@ def formatTime(t):
   return datetime.fromtimestamp(t).strftime("%Y-%m-%d %H:%M:%S.%f")
 
 def printAdjust(r,s):
-  fo = s['offset']
-  ft = s['time']
-  o  = r['offset']
-  t  = r['time']
-  rtc= r['rtc']
+  fo   = s['offset']
+  ft   = s['time']
+  o    = r['offset']
+  t    = r['time']
+  rtc  = r['rtc']
+  temp = r['temp']
+  rtemp= r['rtc_temp']
 
   d  = (fo-o)/(t-ft)  # d/sec
   d *= 60             # d/min
@@ -94,7 +101,7 @@ def printAdjust(r,s):
   ad = round(tt)
   tt = (tt-ad)        # e/day
 
-  print "%s T:%s R:%s O:% 12.6f A: %+04d %+04d %+04d" % (formatTime(t),formatTime(rtc),formatTime(t2000+t-ft),o-fo,am,ah,ad)
+  print "%s T:%s R:%s O:% 12.6f A: %+04d %+04d %+04d T: %2.1f (%d)" % (formatTime(t),formatTime(rtc),formatTime(t2000+t-ft),o-fo,am,ah,ad,temp,rtemp)
 
 def loadSession(fn):
   f = open(fn, 'r')

@@ -4,8 +4,14 @@
 #include <RTC.h>
 
 // Low Power
+volatile uint8_t  LPSR = 0; // Low Power Status Register
+const    uint8_t  USRE = 0; // USART Enabled
+const    uint8_t  USRW = 1; // USART WarmUp
+const    uint8_t  ADCE = 3; // ADC Enabled
+const    uint8_t  ADCW = 4; // ADC WarmUp
+
+// USART
 const uint32_t    MAX_USART   = 10*1000;
-volatile uint8_t  using_usart = 0;
 volatile uint32_t usart_ttl  = 0;
 
 // EEPROM
@@ -13,6 +19,7 @@ const uint8_t EE_OSCCAL = 0x00;
 
 // Temp
 const uint32_t TEMP_TIME = 30*60*1000;
+const uint32_t TEMP_WARM = 100;
 uint32_t temp_next   = 0;
 uint16_t temp        = 0;
 
@@ -64,23 +71,29 @@ void loop() {
 //#################
 void temp_loop() {
   if(RTC.millis() >= temp_next) {
-    power_adc_enable();   // Turn on ADC
-    // Enable the ADC with 8MHz/128=62.5kHz
-    ADCSRA = _BV(ADEN) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
-    // Set the internal reference and mux.
-    ADMUX   = (_BV(REFS1) | _BV(REFS0) | _BV(MUX3));
-    
-    _delay_ms(1);
-    
-    // Discard the first read
-    rawAnalogReadWithSleep();
-    temp = rawAnalogReadWithSleep();
+    // If ADC was off, I need to WarmUp
+    if(!(LPSR & 1<<ADCE)) {
+      power_adc_enable();   // Turn on ADC
+      // Enable the ADC with 8MHz/128=62.5kHz
+      ADCSRA = 1<<ADEN | 1<<ADPS2 | 1<<ADPS1 | 1<<ADPS0;
+      // Set the internal reference and mux.
+      ADMUX  = 1<<REFS1 | 1<<REFS0 | 1<<MUX3;
+
+      LPSR |= 1<<ADCE | 1<<ADCW;
+      temp_next = RTC.millis() + TEMP_WARM;
+    // If ADC was warming, I can read
+    } else if(LPSR & 1<<ADCW) {
+      // Discard the first read
+      rawAnalogReadWithSleep();
+      temp = rawAnalogReadWithSleep();
   
-    ADMUX  = 0;           // Disable internal ref
-    ADCSRA = 0;           // Disable ADC
-    power_adc_disable();  // Turn off ADC
+      ADMUX  = 0;           // Disable internal ref
+      ADCSRA = 0;           // Disable ADC
+      power_adc_disable();  // Turn off ADC
     
-    temp_next = RTC.millis() + TEMP_TIME;
+      LPSR &= ~(1<<ADCE | 1<<ADCW);
+      temp_next = RTC.millis() + TEMP_TIME;
+    }
   }
 }
 
@@ -90,7 +103,7 @@ uint16_t rawAnalogReadWithSleep() {
   ADCSRA |= 1<<ADSC; // Start conversion
 
   // Sleep while conversion
-  set_sleep_mode( SLEEP_MODE_IDLE );
+  set_sleep_mode(SLEEP_MODE_IDLE);
   sleep_enable();
 
   // Loop until the conversion is finished
@@ -121,8 +134,17 @@ ISR(ADC_vect) {
 void menu_loop() {
   while(Serial.available()>0) {
     usart_ttl = RTC.millis() + MAX_USART;
-    // Read while available or end of command
     char c;
+    // USART WarmUp
+    if(LPSR & 1<<USRW) {
+      // Flush serial input
+      while(Serial.available()>0) {
+        c = Serial.read();
+      }
+      LPSR &= ~(1<<USRW);
+      Serial.println("Ready");
+    }
+    // Read while available or end of command
     do {
       c = Serial.read();
       cmdline[cmdlen] = c;
@@ -163,8 +185,8 @@ void menu_loop() {
       cmdlen = 0;
     }
   }
-  if(using_usart && (RTC.millis() > usart_ttl)) {
-    using_usart = 0;
+  if((LPSR & (1<<USRE)) && (RTC.millis() > usart_ttl)) {
+    LPSR &= ~(1<<USRE);
     // Interrupt on PD0 (RXD)
     cli();
     PCICR  |= (1 << PCIE2);    // set PCIE2 to enable PCMSK2 scan
@@ -241,7 +263,7 @@ void menu_print_temp() {
 //# Low Power #
 //#############
 void sleep() {
-  if(using_usart) {
+  if(LPSR & (1<<USRE | 1<<ADCE)) {
     set_sleep_mode (SLEEP_MODE_IDLE);
   } else {
     Serial.flush();
@@ -256,7 +278,7 @@ void sleep() {
 }
 
 ISR(PCINT2_vect) {
-  using_usart = 1;
+  LPSR |= 1<<USRE | 1<<USRW;
   RTC.sync();
   usart_ttl = RTC.millis() + MAX_USART;
   PCMSK2 &= ~(1 << PCINT16);  // disable PCINT16 to trigger an interrupt on state change 
