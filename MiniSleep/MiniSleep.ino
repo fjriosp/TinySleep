@@ -1,5 +1,6 @@
 #include <avr/sleep.h>
 #include <avr/power.h>
+#include <FastBit.h>
 #include <EEPROM.h>
 #include <RTC.h>
 
@@ -118,19 +119,19 @@ void loop() {
 // A0-A5 (D14-D19) = PCINT 8-13  = PCIR1 = PC = PCIE1 = PCMSK1
 
 void pcint_enable(uint8_t pin) {
-  uint8_t mask = 1;
+  uint8_t mask;
   if(pin < 8) {
-    mask <<= pin;
+    mask = bit(pin);
     PCMSK2  |=   mask;          // set PDx to trigger an interrupt on state change
     oldPIND &= ~(mask);         // save the current PDx value
     oldPIND |=  (PIND & mask);
   } else if(pin < 14) {
-    mask <<= pin - 8;
+    mask = bit(pin - 8);
     PCMSK0  |=   mask;          // set PBx to trigger an interrupt on state change
     oldPINB &= ~(mask);         // save the current PBx value
     oldPINB |=  (PINB & mask);
   } else if(pin < 20) {
-    mask <<= pin - 14;
+    mask = bit(pin - 14);
     PCMSK1  |=   mask;          // set PCx to trigger an interrupt on state change
     oldPINC &= ~(mask);         // save the current PCx value
     oldPINC |=  (PINC & mask);
@@ -140,13 +141,13 @@ void pcint_enable(uint8_t pin) {
 void pcint_disable(uint8_t pin) {
   uint8_t mask;
   if(pin < 8) {
-    mask = _BV(pin);
+    mask = bit(pin);
     PCMSK2  &= ~(mask);         // disable PDx interrupt
   } else if(pin < 14) {
-    mask = _BV(pin-8);
+    mask = bit(pin-8);
     PCMSK0  &= ~(mask);         // disable PBx interrupt
   } else if(pin < 20) {
-    mask = _BV(pin-14);
+    mask = bit(pin-14);
     PCMSK1  &= ~(mask);         // disable PCx interrupt
   }
 }
@@ -156,12 +157,12 @@ ISR(PCINT0_vect) {
   const uint8_t newPINB = PINB;
   const uint8_t flags = (newPINB ^ oldPINB) & PCMSK0;
   
-  if(flags & _BV(BTN0_PIN - 8)) {
+  if(flags & bit(BTN0_PIN - 8)) {
     // D10/PB2 interrupt
     // BTN0 interrupt
   }
   
-  if(flags & _BV(HR_PIN - 8)) {
+  if(flags & bit(HR_PIN - 8)) {
     // D11/PB3 interrupt
     // HR interrupt
   }
@@ -174,12 +175,12 @@ ISR(PCINT1_vect) {
   const uint8_t newPINC = PINC;
   const uint8_t flags = (newPINC ^ oldPINC) & PCMSK1;
   
-  if(flags & _BV(BTN1_PIN - 14)) {
+  if(flags & bit(BTN1_PIN - 14)) {
     // D16/A2/PC2 interrupt
     // BTN1 interrupt
   }
   
-  if(flags & _BV(BTN3_PIN - 14)) {
+  if(flags & bit(BTN3_PIN - 14)) {
     // D17/A3/PC3 interrupt
     // BTN3 interrupt
   }
@@ -192,7 +193,7 @@ ISR(PCINT2_vect) {
   const uint8_t newPIND = PIND;
   const uint8_t flags = (newPIND ^ oldPIND) & PCMSK2;
   
-  if(flags & _BV(0)) {
+  if(flags & bit(0)) {
     // D0/PD0 interrupt
     bitSet(LPSR,LPUSRE);
     bitSet(LPSR,LPUSRW);
@@ -201,7 +202,7 @@ ISR(PCINT2_vect) {
     pcint_disable(USART_RX_PIN);
   }
   
-  if(flags & _BV(2)) {
+  if(flags & bit(2)) {
     // D2/PD2 interrupt
     // BTN2 interrupt
   }
@@ -218,9 +219,9 @@ void temp_loop() {
     if(!bitRead(LPSR,LPADCE)) {
       power_adc_enable();   // Turn on ADC
       // Enable the ADC with 8MHz/128=62.5kHz
-      ADCSRA = _BV(ADEN) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
+      ADCSRA = bit(ADEN) | bit(ADPS2) | bit(ADPS1) | bit(ADPS0);
       // Set the internal reference and mux.
-      ADMUX  = _BV(REFS1) | _BV(REFS0) | _BV(MUX3);
+      ADMUX  = bit(REFS1) | bit(REFS0) | bit(MUX3);
 
       bitSet(LPSR,LPADCE);
       temp_next = RTC.millis() + TEMP_WARM;
@@ -436,7 +437,7 @@ void menu_print_temp_log() {
 void sleep() {
   Serial.flush(); // Force a flush to prevent TX interrupts
   
-  if(LPSR & (_BV(LPUSRE) | _BV(LPADCE))) {
+  if(LPSR & (bit(LPUSRE) | bit(LPADCE))) {
     set_sleep_mode (SLEEP_MODE_IDLE);
   } else {
     set_sleep_mode (SLEEP_MODE_PWR_SAVE);
