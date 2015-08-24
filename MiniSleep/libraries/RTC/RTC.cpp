@@ -8,14 +8,14 @@ volatile uint8_t  _RTC::dd = 1;
 volatile uint8_t  _RTC::mm = 1;
 volatile uint8_t  _RTC::yy = 0;
 
+volatile int8_t   _RTC::temp = 25;
+
 const uint8_t EV_MINUTE = 0;
 const uint8_t EV_HOUR   = 1;
-const uint8_t EV_DAY    = 2;
 uint8_t  _RTC::_event   = EV_MINUTE;
 
 int8_t _RTC::am = 0;
 int8_t _RTC::ah = 0;
-int8_t _RTC::ad = 0;
 
 void _RTC::begin(void) {
   // Configure Timer2
@@ -135,7 +135,6 @@ ISR(TIMER2_OVF_vect) {
 	if(_hh > 23) {
 	  _hh = 0;
 	  uint8_t _dd = RTC.dd + 1;
-	  RTC._event = EV_DAY;
 	  uint8_t _mm = RTC.mm;
 	  uint8_t _yy = RTC.yy;
 	  if(_dd > 31) {
@@ -187,11 +186,8 @@ ISR(TIMER2_COMPA_vect) {
   TIMSK2 &= ~(1<<OCIE2A);  // Disable COMPA Interrupt
   
   switch(RTC._event) {
-    case EV_DAY:
-      TCNT2 += RTC.ad;
-      break;
     case EV_HOUR:
-      TCNT2 += RTC.ah;
+      TCNT2 += RTC.getTempComp() + RTC.ah;
       break;
     case EV_MINUTE:
       TCNT2 += RTC.am;

@@ -6,7 +6,6 @@ import serial
 import time
 from datetime import datetime
 import sys
-import Adafruit_DHT
 
 dt2000 = datetime(2000,1,1,0,0,0,0)
 t2000  = time.mktime(dt2000.timetuple())
@@ -49,7 +48,6 @@ def checkTime():
 
   ser.write('t\r')
   rtc_temp = int(ser.readline().rstrip())
-  hum, temp = Adafruit_DHT.read_retry(Adafruit_DHT.AM2302, 4)
   
   ser.close();
 
@@ -58,8 +56,6 @@ def checkTime():
   res['rtc']      = rtc_time
   res['rtc_str']  = rtc
   res['offset']   = rtc_time-real_time
-  res['hum']      = hum
-  res['temp']     = temp
   res['rtc_temp'] = rtc_temp
   return res
 
@@ -88,11 +84,10 @@ def printAdjust(r,s):
   o    = r['offset']
   t    = r['time']
   rtc  = r['rtc']
-  temp = r['temp']
   rtemp= r['rtc_temp']
 
-  d  = (fo-o)/(t-ft)  # d/sec
-  d *= 60             # d/min
+  ds = (fo-o)/(t-ft)  # d/sec
+  d  = ds * 60        # d/min
   tt = d/(0.250/256)  # t/min
   am = round(tt)
   tt = (tt-am)*60     # t/hour
@@ -101,7 +96,9 @@ def printAdjust(r,s):
   ad = round(tt)
   tt = (tt-ad)        # e/day
 
-  print "%s T:%s R:%s O:% 12.6f A: %+04d %+04d %+04d T: %2.1f (%d)" % (formatTime(t),formatTime(rtc),formatTime(t2000+t-ft),o-fo,am,ah,ad,temp,rtemp)
+  ppm = ds * 1000000
+
+  print "%s T:%s R:%s O:% 12.6f A: %+04d %+04d %f T: %d" % (formatTime(t),formatTime(rtc),formatTime(t2000+t-ft),o-fo,am,ah,ppm,rtemp)
 
 def loadSession(fn):
   f = open(fn, 'r')
