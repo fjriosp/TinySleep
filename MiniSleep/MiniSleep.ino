@@ -24,6 +24,7 @@ static const uint8_t BTN3_PIN     = A3;
 DHT dht(DHT_PIN, DHT22);
 static const uint8_t T_LOG_SIZE = 128;
 uint8_t  log_i = 0;
+uint16_t atemp_log[T_LOG_SIZE];
 uint16_t itemp_log[T_LOG_SIZE];
 uint16_t etemp_log[T_LOG_SIZE];
 #endif
@@ -53,7 +54,7 @@ static const uint8_t TEMP_OFFSET = 323;
 static const uint8_t TEMP_MULT   = 216;
 static const uint8_t TEMP_SHIFT  = 8; // DIV 256
 
-static const uint32_t TEMP_TIME = 30*60*1000UL;
+static const uint32_t TEMP_TIME = 1*30*1000UL;
 static const uint32_t TEMP_WARM = 100L;
 uint32_t temp_next = 0;
 
@@ -227,14 +228,20 @@ void temp_loop() {
       temp_next = RTC.millis() + TEMP_WARM;
     // If ADC was enabled, I can read
     } else {
-      // Discard the first read
-      rawAnalogReadWithSleep();
-      uint16_t t = rawAnalogReadWithSleep();
+      // Mean 8 reads
+      uint16_t t = 0;
+      for(uint8_t i=0; i<8; i++) {
+        t += rawAnalogReadWithSleep();
+      }
+      // Adjust before truncate (DIV 8)
+      t = (t - 2) / 8;  
       
+      // Now calc the temperature
       int8_t t2 = t - TEMP_OFFSET;  // SUB and truncate to 8bits
       RTC.temp = (t2 * TEMP_MULT) >> TEMP_SHIFT;
 
 #ifdef CALIBRATE_TEMP
+      atemp_log[log_i] = ADCW;
       itemp_log[log_i] = RTC.temp;
       etemp_log[log_i] = dht.readTemperature(false)*10;
       log_i = (log_i+1) % T_LOG_SIZE;
@@ -251,6 +258,9 @@ void temp_loop() {
 }
 
 uint16_t rawAnalogReadWithSleep() {
+  // Wait until ADC is IDLE
+  while(bitRead(ADCSRA,ADSC));
+  
   bitSet(ADCSRA,ADIF); // Clear interrupt flag
   bitSet(ADCSRA,ADIE); // Enable ADC interrupt
 
@@ -421,7 +431,7 @@ void menu_print_temp() {
 void menu_print_temp_log() {
   char buf[16];
   for(uint8_t i=0; i<T_LOG_SIZE; i++) {
-    sprintf_P(buf,PSTR("%3hhu - %4hu (%4hu)"),i,itemp_log[i],etemp_log[i]);
+    sprintf_P(buf,PSTR("%3hhu - %4hu (%4hu) <%4hu>"),i,atemp_log[i],itemp_log[i],etemp_log[i]);
     Serial.print(buf);
     if(i == log_i) {
       Serial.print(F(" <--"));
