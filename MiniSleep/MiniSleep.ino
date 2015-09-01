@@ -1,8 +1,18 @@
+#include <Arduino.h>
+#include <FastBit.h>
 #include <avr/sleep.h>
 #include <avr/power.h>
-#include <FastBit.h>
 #include <EEPROM.h>
 #include <RTC.h>
+
+#define PCINT_D0  pcint_usart
+//#define PCINT_D2  empty
+//#define PCINT_D10 empty
+//#define PCINT_D11 empty
+//#define PCINT_A2  empty
+//#define PCINT_A3  empty
+
+#include <PCInt.h>
 
 // Neeeded for conditional global variables
 void empty(void) {}
@@ -17,10 +27,9 @@ static const uint8_t BTN1_PIN     = A2;
 static const uint8_t BTN3_PIN     = A3;
 
 // Comment this to disable DHT22 calibration
-#define CALIBRATE_TEMP
+//#include <DHT.h>
 
-#ifdef CALIBRATE_TEMP
-#include <DHT.h>
+#ifdef DHT_H
 DHT dht(DHT_PIN, DHT22);
 static const uint8_t T_LOG_SIZE = 128;
 uint8_t  log_i = 0;
@@ -28,11 +37,6 @@ uint16_t atemp_log[T_LOG_SIZE];
 uint16_t itemp_log[T_LOG_SIZE];
 uint16_t etemp_log[T_LOG_SIZE];
 #endif
-
-// Interrupts
-volatile uint8_t oldPINB = 0;
-volatile uint8_t oldPINC = 0;
-volatile uint8_t oldPIND = 0;
 
 // Low Power
 volatile uint8_t  LPSR   = 0; // Low Power Status Register
@@ -54,7 +58,7 @@ static const uint8_t TEMP_OFFSET = 323;
 static const uint8_t TEMP_MULT   = 216;
 static const uint8_t TEMP_SHIFT  = 8; // DIV 256
 
-static const uint32_t TEMP_TIME = 1*30*1000UL;
+static const uint32_t TEMP_TIME = 60*60*1000UL;
 static const uint32_t TEMP_WARM = 100L;
 uint32_t temp_next = 0;
 
@@ -98,7 +102,7 @@ void setup() {
   
   Serial.begin(9600);
   
-#ifdef CALIBRATE_TEMP
+#ifdef DHT_H
   dht.begin();
 #endif
 } 
@@ -114,101 +118,13 @@ void loop() {
 //# PCInterrupts #
 //################
 
-// Pin map:
-// D0-D7           = PCINT 16-23 = PCIR2 = PD = PCIE2 = PCMSK2
-// D8-D13          = PCINT 0-5   = PCIR0 = PB = PCIE0 = PCMSK0
-// A0-A5 (D14-D19) = PCINT 8-13  = PCIR1 = PC = PCIE1 = PCMSK1
-
-void pcint_enable(uint8_t pin) {
-  uint8_t mask;
-  if(pin < 8) {
-    mask = bit(pin);
-    PCMSK2  |=   mask;          // set PDx to trigger an interrupt on state change
-    oldPIND &= ~(mask);         // save the current PDx value
-    oldPIND |=  (PIND & mask);
-  } else if(pin < 14) {
-    mask = bit(pin - 8);
-    PCMSK0  |=   mask;          // set PBx to trigger an interrupt on state change
-    oldPINB &= ~(mask);         // save the current PBx value
-    oldPINB |=  (PINB & mask);
-  } else if(pin < 20) {
-    mask = bit(pin - 14);
-    PCMSK1  |=   mask;          // set PCx to trigger an interrupt on state change
-    oldPINC &= ~(mask);         // save the current PCx value
-    oldPINC |=  (PINC & mask);
-  }
-}
-
-void pcint_disable(uint8_t pin) {
-  uint8_t mask;
-  if(pin < 8) {
-    mask = bit(pin);
-    PCMSK2  &= ~(mask);         // disable PDx interrupt
-  } else if(pin < 14) {
-    mask = bit(pin-8);
-    PCMSK0  &= ~(mask);         // disable PBx interrupt
-  } else if(pin < 20) {
-    mask = bit(pin-14);
-    PCMSK1  &= ~(mask);         // disable PCx interrupt
-  }
-}
-
-// PINB interrupts
-ISR(PCINT0_vect) {
-  const uint8_t newPINB = PINB;
-  const uint8_t flags = (newPINB ^ oldPINB) & PCMSK0;
-  
-  if(flags & bit(BTN0_PIN - 8)) {
-    // D10/PB2 interrupt
-    // BTN0 interrupt
-  }
-  
-  if(flags & bit(HR_PIN - 8)) {
-    // D11/PB3 interrupt
-    // HR interrupt
-  }
-  
-  oldPINB = newPINB;
-}
-
-// PINC interrupts
-ISR(PCINT1_vect) {
-  const uint8_t newPINC = PINC;
-  const uint8_t flags = (newPINC ^ oldPINC) & PCMSK1;
-  
-  if(flags & bit(BTN1_PIN - 14)) {
-    // D16/A2/PC2 interrupt
-    // BTN1 interrupt
-  }
-  
-  if(flags & bit(BTN3_PIN - 14)) {
-    // D17/A3/PC3 interrupt
-    // BTN3 interrupt
-  }
-  
-  oldPINC = newPINC;
-}
-
-// PIND interrupts
-ISR(PCINT2_vect) {
-  const uint8_t newPIND = PIND;
-  const uint8_t flags = (newPIND ^ oldPIND) & PCMSK2;
-  
-  if(flags & bit(0)) {
-    // D0/PD0 interrupt
-    bitSet(LPSR,LPUSRE);
-    bitSet(LPSR,LPUSRW);
-    RTC.sync();
-    usart_ttl = RTC.millis() + MAX_USART;
-    pcint_disable(USART_RX_PIN);
-  }
-  
-  if(flags & bit(2)) {
-    // D2/PD2 interrupt
-    // BTN2 interrupt
-  }
-  
-  oldPIND = newPIND;
+void pcint_usart(void) {
+  // D0/PD0 interrupt
+  bitSet(LPSR,LPUSRE);
+  bitSet(LPSR,LPUSRW);
+  RTC.sync();
+  usart_ttl = RTC.millis() + MAX_USART;
+  pcint_disable(USART_RX_PIN);
 }
 
 //#################
@@ -240,7 +156,7 @@ void temp_loop() {
       int8_t t2 = t - TEMP_OFFSET;  // SUB and truncate to 8bits
       RTC.temp = (t2 * TEMP_MULT) >> TEMP_SHIFT;
 
-#ifdef CALIBRATE_TEMP
+#ifdef DHT_H
       atemp_log[log_i] = ADCW;
       itemp_log[log_i] = RTC.temp;
       etemp_log[log_i] = dht.readTemperature(false)*10;
@@ -339,7 +255,7 @@ void menu_loop() {
         case 't':
           menu_print_temp();
           break;
-#ifdef CALIBRATE_TEMP
+#ifdef DHT_H
         case 'T':
           menu_print_temp_log();
           break;
@@ -369,7 +285,7 @@ void menu_help() {
   Serial.println(F("   A - Set the rtc adjust."));
   Serial.println(F("   m - Show mem stats."));
   Serial.println(F("   t - Show temperature."));
-#ifdef CALIBRATE_TEMP
+#ifdef DHT_H
   Serial.println(F("   T - Show temperature log."));
 #endif
 }
@@ -427,7 +343,7 @@ void menu_print_temp() {
   Serial.println(RTC.temp);
 }
 
-#ifdef CALIBRATE_TEMP
+#ifdef DHT_H
 void menu_print_temp_log() {
   char buf[16];
   for(uint8_t i=0; i<T_LOG_SIZE; i++) {
