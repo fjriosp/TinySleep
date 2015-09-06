@@ -1,30 +1,22 @@
-#include <Arduino.h>
 #include <FastBit.h>
 #include <avr/sleep.h>
 #include <avr/power.h>
 #include <EEPROM.h>
 #include <RTC.h>
-
-#define PCINT_D0  pcint_usart
-//#define PCINT_D2  empty
-//#define PCINT_D10 empty
-//#define PCINT_D11 empty
-//#define PCINT_A2  empty
-//#define PCINT_A3  empty
-
 #include <PCInt.h>
 
 // Neeeded for conditional global variables
 void empty(void) {}
 
 // IO
-static const uint8_t USART_RX_PIN =  0;
-static const uint8_t DHT_PIN      =  2;
-static const uint8_t BTN2_PIN     =  2;
-static const uint8_t BTN0_PIN     = 10;
-static const uint8_t HR_PIN       = 11;
-static const uint8_t BTN1_PIN     = A2;
-static const uint8_t BTN3_PIN     = A3;
+#define USART_RX_PIN   0
+#define DHT_PIN        2
+#define BTN2_PIN       2
+#define HR_PWR         9
+#define BTN0_PIN      10
+#define HR_PIN        11
+#define BTN1_PIN      16 //A2
+#define BTN3_PIN      17 //A3
 
 // Comment this to disable DHT22 calibration
 //#include <DHT.h>
@@ -62,6 +54,22 @@ static const uint32_t TEMP_TIME = 60*60*1000UL;
 static const uint32_t TEMP_WARM = 100L;
 uint32_t temp_next = 0;
 
+// HR
+volatile uint8_t  HRSR   = 0; // HeartRate Status Register
+static const    uint8_t  HRW  = 0; // HR WarmUp
+static const    uint8_t  HRS  = 1; // HR Start
+static const    uint8_t  HRR  = 2; // HR Ready
+
+static const uint32_t HR_BEATS      = 5;
+static const uint32_t MIN_HR        = 30;
+static const uint32_t HR_MAX_TIME   = HR_BEATS*((60*1000UL)/MIN_HR);
+static const uint32_t HR_SLEEP_TIME = 60*1000UL;
+static const uint32_t HR_WARM_TIME  = 2*1000UL;
+volatile uint32_t hr_start;
+uint32_t hr_next;
+volatile uint8_t hr_beats = 0;
+uint16_t hr = 0;
+
 // Menu
 char cmdline[32];
 uint8_t cmdlen = 0;
@@ -85,20 +93,22 @@ void setup() {
   power_twi_enable();    // Turn on TWI
   power_usart0_enable(); // Turn on Serial
   
+  fPinMode(BTN0_PIN,INPUT);
+  fPinMode(BTN1_PIN,INPUT);
+  fPinMode(BTN2_PIN,INPUT);
+  fPinMode(BTN3_PIN,INPUT);
+  fPinMode(HR_PIN,INPUT);
+  fPinMode(HR_PWR,OUTPUT);
+  
+  fDigitalWrite(HR_PWR,LOW);
+
   RTC.begin();
   RTC.am = EEPROM.read(EE_RTC_AM);
   RTC.ah = EEPROM.read(EE_RTC_AH);
   
   // Pin change interrupts
-  cli();
-  PCMSK0  = 0;
-  bitSet(PCICR,PCIE0);  // set PCIE0 to enable PCMSK0 (PB) scan
-  PCMSK1  = 0;
-  bitSet(PCICR,PCIE1);  // set PCIE1 to enable PCMSK1 (PC) scan
-  PCMSK2  = 0;
-  bitSet(PCICR,PCIE2);  // set PCIE2 to enable PCMSK2 (PD) scan
+  pcint_begin();
   pcint_enable(USART_RX_PIN);
-  sei();
   
   Serial.begin(9600);
   
@@ -108,23 +118,80 @@ void setup() {
 } 
 
 void loop() {
+  hr_loop();
   temp_loop();
   menu_loop();
   sleep();
   RTC.sync(); // Needed to refresh the async registers
 }
 
-//################
-//# PCInterrupts #
-//################
+//#############
+//# HeartRate #
+//#############
+void hr_loop() {
+  if(fBitRead(HRSR,HRW)) {
+    if(RTC.millis() - hr_start >= HR_WARM_TIME) {
+      hr_off();
+    }
+  }else if(fBitRead(HRSR,HRS)) {
+    if(RTC.millis() - hr_start >= HR_MAX_TIME) {
+      hr_off();
+    }
+  }else if(fBitRead(HRSR,HRR)) {
+    Serial.print("HR: ");
+    Serial.println(hr);
+    fBitClear(HRSR,HRR);
+  }else{
+    if(RTC.millis() >= hr_next) {
+      hr_warm();
+    }
+  }
+}
 
-void pcint_usart(void) {
-  // D0/PD0 interrupt
-  bitSet(LPSR,LPUSRE);
-  bitSet(LPSR,LPUSRW);
-  RTC.sync();
-  usart_ttl = RTC.millis() + MAX_USART;
-  pcint_disable(USART_RX_PIN);
+void hr_off() {
+  pcint_disable(HR_PIN);
+      
+  fBitClear(HRSR,HRW);
+  fBitClear(HRSR,HRS);
+  fBitClear(HRSR,HRR);
+  
+  fDigitalWrite(HR_PIN,LOW);
+}
+
+void hr_warm() {
+  hr_start = RTC.millis();
+  hr_next = hr_start + HR_SLEEP_TIME;
+  
+  fBitSet(HRSR,HRW);
+  fBitClear(HRSR,HRS);
+  fBitClear(HRSR,HRR);
+  
+  pcint_enable(HR_PIN);
+  fDigitalWrite(HR_PIN,HIGH);
+}
+
+PCISR(HR_PIN) {
+  if(fDigitalRead(HR_PIN)) {
+    hr_beats++;
+    
+    if(fBitRead(HRSR,HRW)) {
+      if(hr > 2) {
+        hr_beats = 0;
+        fBitClear(HRSR,HRW);
+        fBitSet(HRSR,HRS);
+        RTC.sync();
+        hr_start = RTC.millis();
+      }
+    } else if(fBitRead(HRSR,HRS)) {
+      if(hr_beats >= HR_BEATS) {
+        fBitClear(HRSR,HRS);
+        fBitSet(HRSR,HRR);
+        RTC.sync();
+        hr = (((unsigned long)hr_beats)*60000)/(RTC.millis()-hr_start);
+        pcint_disable(HR_PIN);
+      }
+    }
+  }
 }
 
 //#################
@@ -133,14 +200,14 @@ void pcint_usart(void) {
 void temp_loop() {
   if(RTC.millis() > temp_next) {
     // If ADC was off, I need to WarmUp
-    if(!bitRead(LPSR,LPADCE)) {
+    if(!fBitRead(LPSR,LPADCE)) {
       power_adc_enable();   // Turn on ADC
       // Enable the ADC with 8MHz/128=62.5kHz
-      ADCSRA = bit(ADEN) | bit(ADPS2) | bit(ADPS1) | bit(ADPS0);
+      ADCSRA = fBit(ADEN) | fBit(ADPS2) | fBit(ADPS1) | fBit(ADPS0);
       // Set the internal reference and mux.
-      ADMUX  = bit(REFS1) | bit(REFS0) | bit(MUX3);
+      ADMUX  = fBit(REFS1) | fBit(REFS0) | fBit(MUX3);
 
-      bitSet(LPSR,LPADCE);
+      fBitSet(LPSR,LPADCE);
       temp_next = RTC.millis() + TEMP_WARM;
     // If ADC was enabled, I can read
     } else {
@@ -167,7 +234,7 @@ void temp_loop() {
       ADCSRA = 0;           // Disable ADC
       power_adc_disable();  // Turn off ADC
     
-      bitClear(LPSR,LPADCE);
+      fBitClear(LPSR,LPADCE);
       temp_next = RTC.millis() + TEMP_TIME;
     }
   }
@@ -175,10 +242,10 @@ void temp_loop() {
 
 uint16_t rawAnalogReadWithSleep() {
   // Wait until ADC is IDLE
-  while(bitRead(ADCSRA,ADSC));
+  while(fBitRead(ADCSRA,ADSC));
   
-  bitSet(ADCSRA,ADIF); // Clear interrupt flag
-  bitSet(ADCSRA,ADIE); // Enable ADC interrupt
+  fBitSet(ADCSRA,ADIF); // Clear interrupt flag
+  fBitSet(ADCSRA,ADIE); // Enable ADC interrupt
 
   // Sleep while conversion
   set_sleep_mode(SLEEP_MODE_IDLE);
@@ -191,12 +258,12 @@ uint16_t rawAnalogReadWithSleep() {
     sleep_cpu();
     cli();          // Disable interrupts so the while below is performed without interruption
   // Conversion finished?  If not, loop.
-  } while(bitRead(ADCSRA,ADSC));
+  } while(fBitRead(ADCSRA,ADSC));
 
   sleep_disable();  // No more sleeping
   sei();            // Enable interrupts
 
-  bitClear(ADCSRA,ADIE); // Disable ADC interrupt
+  fBitClear(ADCSRA,ADIE); // Disable ADC interrupt
   
   return ADCW;
 }
@@ -213,13 +280,13 @@ void menu_loop() {
     usart_ttl = RTC.millis() + MAX_USART;
     char c = 0;
     // USART WarmUp
-    if(bitRead(LPSR,LPUSRW)) {
+    if(fBitRead(LPSR,LPUSRW)) {
       // Flush serial input
       while(Serial.available()>0) {
         c = Serial.read();
         _delay_us(1500);
       }
-      bitClear(LPSR,LPUSRW);
+      fBitClear(LPSR,LPUSRW);
       Serial.println(F("ERROR: WarmUp"));
     }
     // Read while available or end of command
@@ -268,8 +335,8 @@ void menu_loop() {
       cmdlen = 0;
     }
   }
-  if(bitRead(LPSR,LPUSRE) && (RTC.millis() > usart_ttl)) {
-    bitClear(LPSR,LPUSRE);
+  if(fBitRead(LPSR,LPUSRE) && (RTC.millis() > usart_ttl)) {
+    fBitClear(LPSR,LPUSRE);
     pcint_enable(USART_RX_PIN);
   }
 }
@@ -363,7 +430,7 @@ void menu_print_temp_log() {
 void sleep() {
   Serial.flush(); // Force a flush to prevent TX interrupts
   
-  if(LPSR & (bit(LPUSRE) | bit(LPADCE))) {
+  if(LPSR & (fBit(LPUSRE) | fBit(LPADCE))) {
     set_sleep_mode (SLEEP_MODE_IDLE);
   } else {
     set_sleep_mode (SLEEP_MODE_PWR_SAVE);
@@ -374,6 +441,14 @@ void sleep() {
   sleep_bod_disable();  // turn off brown-out in software
   sei();                // guarantees next instruction executed
   sleep_cpu();          // sleep within 3 clock cycles of above
+}
+
+PCISR(USART_RX_PIN) {
+  fBitSet(LPSR,LPUSRE);
+  fBitSet(LPSR,LPUSRW);
+  RTC.sync();
+  usart_ttl = RTC.millis() + MAX_USART;
+  pcint_disable(USART_RX_PIN);
 }
 
 //#############
