@@ -60,11 +60,12 @@ static const    uint8_t  HRW  = 0; // HR WarmUp
 static const    uint8_t  HRS  = 1; // HR Start
 static const    uint8_t  HRR  = 2; // HR Ready
 
-static const uint32_t HR_BEATS      = 5;
-static const uint32_t MIN_HR        = 30;
-static const uint32_t HR_MAX_TIME   = HR_BEATS*((60*1000UL)/MIN_HR);
-static const uint32_t HR_SLEEP_TIME = 60*1000UL;
-static const uint32_t HR_WARM_TIME  = 2*1000UL;
+static const uint32_t HR_BEATS        = 6;
+static const uint32_t MIN_HR          = 40;
+static const uint32_t HR_MAX_TIME     = HR_BEATS*((60*1000UL)/MIN_HR);
+static const uint32_t HR_SLEEP_TIME   = 60*1000UL;
+static const uint32_t HR_WARM_TIMEOUT = 5*1000UL;
+static const uint32_t HR_WARM_TIME    = 2*1000UL;
 volatile uint32_t hr_start;
 uint32_t hr_next;
 volatile uint8_t hr_beats = 0;
@@ -130,16 +131,17 @@ void loop() {
 //#############
 void hr_loop() {
   if(fBitRead(HRSR,HRW)) {
-    if(RTC.millis() - hr_start >= HR_WARM_TIME) {
+    if(RTC.millis() - hr_start >= HR_WARM_TIMEOUT) {
+      //Serial.println("hr_warm_timeout");
       hr_off();
     }
   }else if(fBitRead(HRSR,HRS)) {
     if(RTC.millis() - hr_start >= HR_MAX_TIME) {
+      //Serial.println("hr_timeout");
       hr_off();
     }
   }else if(fBitRead(HRSR,HRR)) {
-    Serial.print("HR: ");
-    Serial.println(hr);
+    Serial.print("HR: ");Serial.println(hr);
     fBitClear(HRSR,HRR);
   }else{
     if(RTC.millis() >= hr_next) {
@@ -149,16 +151,18 @@ void hr_loop() {
 }
 
 void hr_off() {
+  //Serial.println("hr_off");
   pcint_disable(HR_PIN);
       
   fBitClear(HRSR,HRW);
   fBitClear(HRSR,HRS);
   fBitClear(HRSR,HRR);
   
-  fDigitalWrite(HR_PIN,LOW);
+  fDigitalWrite(HR_PWR,LOW);
 }
 
 void hr_warm() {
+  //Serial.println("hr_warm");
   hr_start = RTC.millis();
   hr_next = hr_start + HR_SLEEP_TIME;
   
@@ -167,15 +171,17 @@ void hr_warm() {
   fBitClear(HRSR,HRR);
   
   pcint_enable(HR_PIN);
-  fDigitalWrite(HR_PIN,HIGH);
+  fDigitalWrite(HR_PWR,HIGH);
 }
 
 PCISR(HR_PIN) {
   if(fDigitalRead(HR_PIN)) {
     hr_beats++;
-    
+    //Serial.print("hr_beats=");Serial.println(hr_beats);
     if(fBitRead(HRSR,HRW)) {
-      if(hr > 2) {
+      RTC.sync();
+      if(RTC.millis() - hr_start >= HR_WARM_TIME) {
+        //Serial.println("hr_start");
         hr_beats = 0;
         fBitClear(HRSR,HRW);
         fBitSet(HRSR,HRS);
@@ -184,11 +190,14 @@ PCISR(HR_PIN) {
       }
     } else if(fBitRead(HRSR,HRS)) {
       if(hr_beats >= HR_BEATS) {
+        //Serial.println("hr_ready");
         fBitClear(HRSR,HRS);
         fBitSet(HRSR,HRR);
         RTC.sync();
         hr = (((unsigned long)hr_beats)*60000)/(RTC.millis()-hr_start);
+        //Serial.print("hr=");Serial.println(hr);
         pcint_disable(HR_PIN);
+        fDigitalWrite(HR_PWR,LOW);
       }
     }
   }
