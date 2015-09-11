@@ -187,12 +187,14 @@ void hr_loop() {
     case HR_WARM:
       if(RTC.millis() - hr_start >= HR_MAX_WARM_TIME) {
         LOGLN(LTRACE,F("hr_warm_timeout"));
+        i2c_ee_write(-1);
         hr_idle();
       }
     break;
     case HR_RUNNING:
       if(RTC.millis() - hr_start >= HR_MAX_TIME) {
         LOGLN(LTRACE,F("hr_timeout"));
+        i2c_ee_write(-1);
         hr_idle();
       }
     break;
@@ -226,6 +228,7 @@ void hr_disable() {
 
 void hr_idle() {
   LOGLN(LTRACE,F("hr_idle"));
+  hr_disable();
   hr_status = HR_IDLE;
 }
 
