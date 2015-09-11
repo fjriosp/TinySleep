@@ -1,12 +1,28 @@
 #include <FastBit.h>
 #include <avr/sleep.h>
 #include <avr/power.h>
+#include <Wire.h>
 #include <EEPROM.h>
 #include <RTC.h>
 #include <PCInt.h>
 
 // Neeeded for conditional global variables
 void empty(void) {}
+
+// Debug
+#define LALL     0
+#define LTRACE  20
+#define LDEBUG  40
+#define LINFO   60
+#define LWARN   80
+#define LERROR 100
+#define LFATAL 120
+#define LOFF   255
+
+#define LOG(LVL,...)   {if((LVL)>=(LOG_LEVEL)){Serial.print(__VA_ARGS__);}}
+#define LOGLN(LVL,...) {if((LVL)>=(LOG_LEVEL)){Serial.println(__VA_ARGS__);}}
+
+static const uint8_t LOG_LEVEL = LALL;
 
 // IO
 #define USART_RX_PIN   0
@@ -45,6 +61,10 @@ static const uint8_t EE_OSCCAL = 0x00;
 static const uint8_t EE_RTC_AM = 0x01;
 static const uint8_t EE_RTC_AH = 0x02;
 
+// I2C EEPROM
+static const uint8_t I2C_EE_DEV = 0x50; // 1010 A2 A1 A0
+uint16_t i2c_ee_addr = 0x0000;
+
 // Temp
 static const uint8_t TEMP_OFFSET = 323;
 static const uint8_t TEMP_MULT   = 216;
@@ -55,21 +75,24 @@ static const uint32_t TEMP_WARM = 100L;
 uint32_t temp_next = 0;
 
 // HR
-volatile uint8_t  HRSR   = 0; // HeartRate Status Register
-static const    uint8_t  HRW  = 0; // HR WarmUp
-static const    uint8_t  HRS  = 1; // HR Start
-static const    uint8_t  HRR  = 2; // HR Ready
+static const uint32_t HR_MIN_WARM_TIME = 2*1000UL;  // Minimum WarmUp time
+static const uint32_t HR_MAX_WARM_TIME = 5*1000UL;  // Max time to detect HR during WarmUp
+static const uint32_t HR_INTERVAL_TIME = 60*1000UL; // Take HR every...
 
-static const uint32_t HR_BEATS        = 6;
-static const uint32_t MIN_HR          = 40;
-static const uint32_t HR_MAX_TIME     = HR_BEATS*((60*1000UL)/MIN_HR);
-static const uint32_t HR_SLEEP_TIME   = 60*1000UL;
-static const uint32_t HR_WARM_TIMEOUT = 5*1000UL;
-static const uint32_t HR_WARM_TIME    = 2*1000UL;
-volatile uint32_t hr_start;
-uint32_t hr_next;
-volatile uint8_t hr_beats = 0;
-uint16_t hr = 0;
+static const uint32_t HR_BEATS         = 6;  // Beats to read while measuring HR
+static const uint32_t MIN_HR           = 30; // Minimum HR allowed (used to calc the HR timeout)
+static const uint32_t HR_MAX_TIME      = HR_BEATS*((60*1000UL)/MIN_HR);
+
+static const uint8_t  HR_IDLE    = 0; // HR Idle
+static const uint8_t  HR_WARM    = 1; // HR WarmUp
+static const uint8_t  HR_RUNNING = 2; // HR Running
+static const uint8_t  HR_READY   = 3; // HR Ready
+volatile     uint8_t  hr_status  = HR_IDLE; // HeartRate Status
+
+volatile uint8_t  hr_cnt     = 0;
+volatile uint32_t hr_start   = 0;
+uint32_t hr_next = 0;
+uint16_t hr      = 0;
 
 // Menu
 char cmdline[32];
@@ -112,6 +135,7 @@ void setup() {
   pcint_enable(USART_RX_PIN);
   
   Serial.begin(9600);
+  Wire.begin();
   
 #ifdef DHT_H
   dht.begin();
@@ -126,79 +150,125 @@ void loop() {
   RTC.sync(); // Needed to refresh the async registers
 }
 
+//##############
+//# I2C EEPROM #
+//##############
+void i2c_ee_write(uint8_t data) {
+  Wire.beginTransmission(I2C_EE_DEV);
+  Wire.write((i2c_ee_addr >> 8) & 0xFF);
+  Wire.write((i2c_ee_addr >> 0) & 0xFF);
+  Wire.write(data);
+  Wire.endTransmission();
+  i2c_ee_addr++;
+}
+
+void i2c_ee_goto(uint16_t addr) {
+  Wire.beginTransmission(I2C_EE_DEV);
+  Wire.write((addr >> 8) & 0xFF);
+  Wire.write((addr >> 0) & 0xFF);
+  Wire.endTransmission();
+}
+
+uint8_t i2c_ee_read() {
+  Wire.requestFrom(I2C_EE_DEV, 1);
+  return Wire.read();
+}
+
 //#############
 //# HeartRate #
 //#############
 void hr_loop() {
-  if(fBitRead(HRSR,HRW)) {
-    if(RTC.millis() - hr_start >= HR_WARM_TIMEOUT) {
-      //Serial.println("hr_warm_timeout");
-      hr_off();
-    }
-  }else if(fBitRead(HRSR,HRS)) {
-    if(RTC.millis() - hr_start >= HR_MAX_TIME) {
-      //Serial.println("hr_timeout");
-      hr_off();
-    }
-  }else if(fBitRead(HRSR,HRR)) {
-    Serial.print("HR: ");Serial.println(hr);
-    fBitClear(HRSR,HRR);
-  }else{
-    if(RTC.millis() >= hr_next) {
-      hr_warm();
-    }
+  switch(hr_status) {
+    case HR_IDLE:
+      if(RTC.millis() >= hr_next) {
+        hr_warm();
+      }
+    break;
+    case HR_WARM:
+      if(RTC.millis() - hr_start >= HR_MAX_WARM_TIME) {
+        LOGLN(LTRACE,F("hr_warm_timeout"));
+        hr_idle();
+      }
+    break;
+    case HR_RUNNING:
+      if(RTC.millis() - hr_start >= HR_MAX_TIME) {
+        LOGLN(LTRACE,F("hr_timeout"));
+        hr_idle();
+      }
+    break;
+    case HR_READY:
+      LOG(LINFO,F("HR: "));
+      LOGLN(LINFO,hr);
+      i2c_ee_write(hr);
+      hr_idle();
+    break;
+    default:
+      LOG(LERROR,F("Unknown hr_status: "));
+      LOGLN(LERROR,hr_status);
+      hr_next = 0;
+      hr_idle();
+    break;
   }
 }
 
-void hr_off() {
-  //Serial.println("hr_off");
-  pcint_disable(HR_PIN);
-      
-  fBitClear(HRSR,HRW);
-  fBitClear(HRSR,HRS);
-  fBitClear(HRSR,HRR);
-  
-  fDigitalWrite(HR_PWR,LOW);
-}
-
-void hr_warm() {
-  //Serial.println("hr_warm");
-  hr_start = RTC.millis();
-  hr_next = hr_start + HR_SLEEP_TIME;
-  
-  fBitSet(HRSR,HRW);
-  fBitClear(HRSR,HRS);
-  fBitClear(HRSR,HRR);
-  
+void hr_enable() {
+  LOGLN(LTRACE,F("hr_enable"));
+  hr_cnt = 0;
   pcint_enable(HR_PIN);
   fDigitalWrite(HR_PWR,HIGH);
 }
 
+void hr_disable() {
+  LOGLN(LTRACE,F("hr_disable"));
+  pcint_disable(HR_PIN);
+  fDigitalWrite(HR_PWR,LOW);
+}
+
+void hr_idle() {
+  LOGLN(LTRACE,F("hr_idle"));
+  hr_status = HR_IDLE;
+}
+
+void hr_warm() {
+  LOGLN(LTRACE,F("hr_warm"));
+  hr_start = RTC.millis();
+  hr_next = hr_start + HR_INTERVAL_TIME;
+
+  hr_status = HR_WARM;
+  
+  hr_enable();
+}
+
 PCISR(HR_PIN) {
   if(fDigitalRead(HR_PIN)) {
-    hr_beats++;
-    //Serial.print("hr_beats=");Serial.println(hr_beats);
-    if(fBitRead(HRSR,HRW)) {
-      RTC.sync();
-      if(RTC.millis() - hr_start >= HR_WARM_TIME) {
-        //Serial.println("hr_start");
-        hr_beats = 0;
-        fBitClear(HRSR,HRW);
-        fBitSet(HRSR,HRS);
-        RTC.sync();
-        hr_start = RTC.millis();
-      }
-    } else if(fBitRead(HRSR,HRS)) {
-      if(hr_beats >= HR_BEATS) {
-        //Serial.println("hr_ready");
-        fBitClear(HRSR,HRS);
-        fBitSet(HRSR,HRR);
-        RTC.sync();
-        hr = (((unsigned long)hr_beats)*60000)/(RTC.millis()-hr_start);
-        //Serial.print("hr=");Serial.println(hr);
-        pcint_disable(HR_PIN);
-        fDigitalWrite(HR_PWR,LOW);
-      }
+    hr_cnt++;
+
+    LOG(LTRACE,F("hr_cnt="));
+    LOGLN(LTRACE,hr_cnt);
+
+    switch(hr_status) {
+      case HR_WARM:
+        if(hr_cnt >= 2) {
+          RTC.sync();
+          if(RTC.millis() - hr_start >= HR_MIN_WARM_TIME) {
+            LOGLN(LTRACE,F("hr_start"));
+            hr_cnt = 0;
+            hr_status = HR_RUNNING;
+            hr_start = RTC.millis();
+          }
+        }
+      break;
+      case HR_RUNNING:
+        if(hr_cnt >= HR_BEATS) {
+          RTC.sync();
+          LOGLN(LTRACE,F("hr_ready"));
+          hr_status = HR_READY;
+          hr = (((unsigned long)hr_cnt)*60000)/(RTC.millis()-hr_start);
+          LOG(LTRACE,F("hr="));
+          LOGLN(LTRACE,hr);
+          hr_disable();
+        }
+      break;
     }
   }
 }
@@ -331,6 +401,9 @@ void menu_loop() {
         case 't':
           menu_print_temp();
           break;
+        case 'd':
+          menu_dump_hr_log();
+          break;
 #ifdef DHT_H
         case 'T':
           menu_print_temp_log();
@@ -361,6 +434,7 @@ void menu_help() {
   Serial.println(F("   A - Set the rtc adjust."));
   Serial.println(F("   m - Show mem stats."));
   Serial.println(F("   t - Show temperature."));
+  Serial.println(F("   d - Dump the HR log."));
 #ifdef DHT_H
   Serial.println(F("   T - Show temperature log."));
 #endif
@@ -432,6 +506,16 @@ void menu_print_temp_log() {
   }
 }
 #endif
+
+void menu_dump_hr_log() {
+  Serial.println("HR log:");
+  uint16_t i = 0;
+  i2c_ee_goto(0x0000);
+  
+  for(uint16_t i=0; i < i2c_ee_addr; i++) {
+    Serial.println(i2c_ee_read());
+  }
+}
 
 //#############
 //# Low Power #
